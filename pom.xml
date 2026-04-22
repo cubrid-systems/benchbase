@@ -89,6 +89,26 @@
             </dependencies>
         </profile>
         <profile>
+            <id>cubrid</id>
+            <activation>
+                <property>
+                    <name>env.BENCHBASE_PROFILE</name>
+                    <value>cubrid</value>
+                </property>
+            </activation>
+            <properties>
+                <classifier>cubrid</classifier>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>cubrid</groupId>
+                    <artifactId>cubrid-jdbc</artifactId>
+                    <version>11.3.2.0058</version>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
             <id>mysql</id>
             <activation>
                 <property>
