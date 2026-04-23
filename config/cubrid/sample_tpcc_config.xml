@@ -8,8 +8,14 @@
     <username>dba</username>
     <password></password>
     <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
-    <!-- ADR-3: finalized by M0.5 isolation probe; REP_READ is the working default -->
-    <isolation>TRANSACTION_REPEATABLE_READ</isolation>
+    <!-- ADR-3: READ_COMMITTED empirically selected for Phase 1 based on load-throughput
+         observations (REPEATABLE_READ load was markedly slower on CUBRID 11.5 at SF=1).
+         M0.5 formal isolation probe (RC / REP_READ / SERIALIZABLE × N reps ×
+         consistency-condition count) is DEFERRED to Phase 2 — see
+         .omc/reports/phase-08-summary.md "Honest gaps #1". TPC-C consistency
+         conditions 1-4 on the RC load passed with 0 violations
+         (.omc/reports/benchbase-run-results/m3-consistency.out). -->
+    <isolation>TRANSACTION_READ_COMMITTED</isolation>
     <batchsize>128</batchsize>
 
     <!-- Scale factor is the number of warehouses in TPCC -->

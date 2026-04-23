@@ -79,15 +79,49 @@ Edit `config/cubrid/sample_tpcc_config.xml` to adjust:
 | `password`    | (empty)                              | CUBRID dba default = empty password    |
 | `scalefactor` | `1`                                  | Number of TPC-C warehouses             |
 | `terminals`   | `1`                                  | Concurrent virtual users               |
-| `isolation`   | `TRANSACTION_REPEATABLE_READ`        | See isolation note below               |
+| `isolation`   | `TRANSACTION_READ_COMMITTED`         | See isolation note below               |
 
 ## Isolation Note
 
-REPEATABLE_READ is the working default pending M0.5 probe finalization — see
-ADR-3 in the plan (`/data/cub_sys/.omc/plans/cubrid-benchmarking-phase1.md`).
-The M0.5 empirical probe will measure tpmC and abort rate across READ_COMMITTED,
-REPEATABLE_READ, and SERIALIZABLE, and select the primary level from data.
-Update `<isolation>` in the config XML once M0.5 closes.
+READ_COMMITTED is the Phase 1 default, empirically selected. The load phase under
+REPEATABLE_READ on CUBRID 11.5 at SF=1 was markedly slower than RC (observed
+during integration). The load under RC passed all four TPC-C consistency
+conditions (§3.3.2) with zero violations — see
+`scripts/tpcc-consistency-conditions.sql` and the archived output in
+`.omc/reports/benchbase-run-results/m3-consistency.out`.
+
+The formal M0.5 empirical probe (RC vs REP_READ vs SERIALIZABLE × N reps ×
+numeric consistency-gate) is deferred to Phase 2 per ADR-3 in the plan. Update
+`<isolation>` here when the probe commits a different primary level.
+
+## Consistency Conditions
+
+After `--load=true`, verify TPC-C §3.3.2 conditions 1–4:
+
+```bash
+source /data/cub_sys/.cubrid.sh
+csql -C -u dba demodb@localhost -i scripts/tpcc-consistency-conditions.sql
+```
+
+All four queries must report `violations: 0`. Any non-zero value indicates the
+load did not produce a spec-compliant TPC-C dataset on CUBRID.
+
+## Why There Is No `dialect-cubrid.xml`
+
+BenchBase's JAXB-validated `dialect.xsd` requires every `<dialect>` element to
+contain at least one `<procedure>` child. CUBRID's SQL is ANSI-compatible with
+the default BenchBase TPC-C statements — no overrides are needed. Shipping an
+empty-body `dialect-cubrid.xml` fails XSD validation at load time; shipping a
+dialect file with dummy procedures would be ornamental.
+
+This matches how `dialect-postgres.xml` and `dialect-mysql.xml` are absent: only
+databases that need genuine SQL overrides (`db2`, `monetdb`, `oracle`, `phoenix`,
+`singlestore`, `sqlite`, `sqlserver`, `timesten`) ship dialect files.
+
+The CUBRID-specific DDL details live instead in `ddl-cubrid.sql`:
+- `DROP TABLE ... CASCADE CONSTRAINTS` (Oracle-style, required by CUBRID)
+- `new_order` has PK declared before FK to prevent CUBRID's duplicate-index
+  rejection when FK and PK cover identical column lists.
 
 ## Fork Allowlist (Rebase Hygiene)
 
@@ -95,14 +129,18 @@ All CUBRID-specific changes in this fork are confined to the following paths.
 No other files are modified. See M7 in the plan for the formal allowlist check.
 
 ```
-src/main/java/com/oltpbenchmark/types/DatabaseType.java  (one enum row added)
-pom.xml                                                  (one <profile id="cubrid"> block)
-src/main/resources/benchmarks/tpcc/dialect-cubrid.xml   (new)
-src/main/resources/benchmarks/tpcc/ddl-cubrid.sql       (new)
-config/cubrid/                                           (new directory)
-scripts/install-cubrid-jdbc.sh                          (new)
-CUBRID.md                                               (this file)
+src/main/java/com/oltpbenchmark/types/DatabaseType.java   (one enum row added)
+pom.xml                                                   (one <profile id="cubrid"> block)
+src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
+config/cubrid/                                            (new directory)
+scripts/install-cubrid-jdbc.sh                            (new)
+scripts/tpcc-consistency-conditions.sql                   (new)
+CUBRID.md                                                 (this file)
 ```
+
+Note: `dialect-cubrid.xml` does NOT exist — see "Why There Is No dialect-cubrid.xml"
+above. The spec's allowlist included it by analogy with other dialect files, but
+the JAXB XSD constraint makes the empty-overrides case a no-file case.
 
 When rebasing against upstream BenchBase:
 1. The `DatabaseType.java` enum row is a pure addition — no conflict expected
