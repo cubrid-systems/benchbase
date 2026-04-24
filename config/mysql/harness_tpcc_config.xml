@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<parameters>
+
+    <!-- Connection details (harness: Docker mysql:8.4.3 on localhost:3306). -->
+    <type>MYSQL</type>
+    <driver>com.mysql.cj.jdbc.Driver</driver>
+    <url>jdbc:mysql://localhost:3306/tpcc?rewriteBatchedStatements=true&amp;allowPublicKeyRetrieval=True&amp;sslMode=DISABLED</url>
+    <username>tpcc</username>
+    <password>tpcc</password>
+    <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
+    <!-- Isolation is rewritten by run-regression.sh based on the isolation flag. -->
+    <isolation>TRANSACTION_READ_COMMITTED</isolation>
+    <batchsize>128</batchsize>
+
+    <!-- Scale factor is the number of warehouses in TPCC. Harness rewrites this. -->
+    <scalefactor>1</scalefactor>
+
+    <!-- The workload. <time> rewritten by harness. -->
+    <terminals>1</terminals>
+    <works>
+        <work>
+            <time>60</time>
+            <rate>10000</rate>
+            <weights>45,43,4,4,4</weights>
+        </work>
+    </works>
+
+    <!-- TPCC specific -->
+    <transactiontypes>
+        <transactiontype>
+            <name>NewOrder</name>
+        </transactiontype>
+        <transactiontype>
+            <name>Payment</name>
+        </transactiontype>
+        <transactiontype>
+            <name>OrderStatus</name>
+        </transactiontype>
+        <transactiontype>
+            <name>Delivery</name>
+        </transactiontype>
+        <transactiontype>
+            <name>StockLevel</name>
+        </transactiontype>
+    </transactiontypes>
+</parameters>
