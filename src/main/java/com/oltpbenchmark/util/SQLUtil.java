@@ -565,6 +565,30 @@ WHERE t.name='%s' AND c.name='%s'
     return new HSQLDBCatalog(benchmarkModule);
   }
 
+  /**
+   * The schema this connection reports, or null when the driver does not implement {@link
+   * Connection#getSchema()}.
+   *
+   * <p>{@code getSchema()} is JDBC 4.1 and optional in practice: a driver for a DBMS with no schema
+   * concept may reasonably throw rather than invent an answer. The CUBRID driver does exactly that
+   * ({@code CUBRIDConnection.getSchema()} throws {@code UnsupportedOperationException}), which took
+   * catalog extraction down for every benchmark on that engine.
+   *
+   * <p>A null schema pattern means "do not filter by schema" to {@link DatabaseMetaData}, which is
+   * the correct query for such a DBMS -- so the degradation is not a workaround, it is the right
+   * argument. Some drivers signal the gap as {@link AbstractMethodError} instead (older drivers
+   * compiled against JDBC 4.0), so that is caught too.
+   */
+  private static String getSchemaOrNull(Connection connection) {
+    try {
+      return connection.getSchema();
+    } catch (SQLException | UnsupportedOperationException | AbstractMethodError e) {
+      LOG.debug(
+          "Driver does not implement getSchema(); reading the catalog without a schema filter", e);
+      return null;
+    }
+  }
+
   /** Extract catalog information from the database directly. */
   private static AbstractCatalog getCatalogDirect(DatabaseType databaseType, Connection connection)
       throws SQLException {
@@ -572,7 +596,7 @@ WHERE t.name='%s' AND c.name='%s'
 
     String separator = md.getIdentifierQuoteString();
     String catalog = connection.getCatalog();
-    String schema = connection.getSchema();
+    String schema = getSchemaOrNull(connection);
 
     Map<String, Table> tables = new HashMap<>();
 

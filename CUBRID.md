@@ -149,6 +149,7 @@ No other files are modified. See M7 in the plan for the formal allowlist check.
 
 ```
 src/main/java/com/oltpbenchmark/types/DatabaseType.java   (one enum row added)
+src/main/java/com/oltpbenchmark/util/SQLUtil.java         (getSchema() fallback — see below)
 pom.xml                                                   (one <profile id="cubrid"> block)
 src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
 src/main/resources/benchmarks/tpch/ddl-cubrid.sql         (new)
@@ -164,6 +165,36 @@ see "Why There Is No TPC-C dialect-cubrid.xml" above. The spec's allowlist
 included it by analogy with other dialect files, but the JAXB XSD constraint
 makes the empty-overrides case a no-file case. The TPC-H one does exist and is
 listed above.
+
+### `SQLUtil.java` — the one upstream file this fork touches
+
+ADR-0005 says to prefer upstreaming over widening the allowlist, and this change
+is written to be upstreamed rather than kept: it names no engine.
+
+`SQLUtil.getCatalogDirect()` called `connection.getSchema()` unconditionally.
+That method is JDBC 4.1 and optional in practice — a driver for a DBMS with no
+schema concept may reasonably throw instead of inventing an answer, and CUBRID's
+does (`CUBRIDConnection.getSchema()` throws `UnsupportedOperationException`).
+`refreshCatalog()` runs for every invocation, so this took down **every**
+benchmark on CUBRID before any SQL was issued:
+
+```
+java.sql.SQLException: java.lang.UnsupportedOperationException
+    at cubrid.jdbc.driver.CUBRIDConnection.getSchema(CUBRIDConnection.java:1076)
+    at com.oltpbenchmark.util.SQLUtil.getCatalogDirect(SQLUtil.java:575)
+    at com.oltpbenchmark.api.BenchmarkModule.refreshCatalog(BenchmarkModule.java:221)
+```
+
+The fix reads the schema through `getSchemaOrNull()`, which returns null when the
+driver does not implement it. A null schema pattern means "do not filter by
+schema" to `DatabaseMetaData` — for a DBMS without JDBC schemas that is the
+correct query, not a degraded one, which is why the fix carries no CUBRID
+branch and should apply upstream unchanged.
+
+**Upstream status: not yet filed.** ADR-0005 asks for
+`(upstream-rejected: <link>)` on an allowlist entry that upstream declined; this
+one has not been offered yet, so it is carried as upstream-pending. File it
+against `cmu-db/benchbase` and replace this note with the outcome.
 
 When rebasing against upstream BenchBase:
 1. The `DatabaseType.java` enum row is a pure addition — no conflict expected
