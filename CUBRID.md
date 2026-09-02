@@ -155,6 +155,7 @@ src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
 src/main/resources/benchmarks/tpch/ddl-cubrid.sql         (new)
 src/main/resources/benchmarks/tpch/dialect-cubrid.xml     (new)
 config/cubrid/                                            (new directory)
+data/templated/                                           (untouched -- see below)
 scripts/install-cubrid-jdbc.sh                            (new)
 scripts/tpcc-consistency-conditions.sql                   (new)
 CUBRID.md                                                 (this file)
@@ -195,6 +196,22 @@ branch and should apply upstream unchanged.
 `(upstream-rejected: <link>)` on an allowlist entry that upstream declined; this
 one has not been offered yet, so it is carried as upstream-pending. File it
 against `cmu-db/benchbase` and replace this note with the outcome.
+
+### Why the sysbench templates live in `config/cubrid/`
+
+`config/cubrid/sysbench_templated_config.xml` runs a sysbench OLTP clone through
+upstream's `TemplatedBenchmark`, and its query templates sit beside it in
+`config/cubrid/sysbench_templates.xml` rather than in `data/templated/`, where
+upstream keeps `example.xml`.
+
+`data/templated/` is upstream's directory. A file added there is outside the
+allowlist above, and `sysbench.xml` is a name upstream could plausibly use
+itself. `query_templates_file` takes any path, so nothing is lost by keeping the
+file where this fork's other CUBRID files already are.
+
+The templates are written against a specific table -- `sbtest1` with ids
+1..100000 -- and the ranges in them say so. Templated benchmarks do not load, so
+that table has to exist first; the config file carries the DDL in a comment.
 
 When rebasing against upstream BenchBase:
 1. The `DatabaseType.java` enum row is a pure addition — no conflict expected

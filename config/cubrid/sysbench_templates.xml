@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A sysbench OLTP clone for CUBRID.
+
+     Against sbtest1(id INT PK, k INT with non-unique index k_1, c VARCHAR(120),
+     pad VARCHAR(60)) preloaded with ids 1..100000.
+
+     Insert draws its ids from a disjoint high range so primary-key collisions
+     stay negligible, and Delete draws from the preloaded range, so after
+     enough churn some deletes hit nothing. That is what happens in a long
+     sysbench run too, and it is left that way rather than corrected: a delete
+     that always finds a row is not the workload being measured. -->
+<templates>
+   <template name="PointSelect">
+      <query><![CDATA[SELECT c FROM sbtest1 WHERE id = ?]]></query>
+      <types><type>INTEGER</type></types>
+      <values><value dist="uniform" min="1" max="100000"/></values>
+   </template>
+   <template name="UpdateIndex">
+      <query><![CDATA[UPDATE sbtest1 SET k = k + 1 WHERE id = ?]]></query>
+      <types><type>INTEGER</type></types>
+      <values><value dist="uniform" min="1" max="100000"/></values>
+   </template>
+   <template name="UpdateNonIndex">
+      <query><![CDATA[UPDATE sbtest1 SET c = 'updated-by-benchbase-templated-sysbench-clone-cccccccccccccccccccccccccccccccccccccccccccc' WHERE id = ?]]></query>
+      <types><type>INTEGER</type></types>
+      <values><value dist="uniform" min="1" max="100000"/></values>
+   </template>
+   <template name="Insert">
+      <query><![CDATA[INSERT INTO sbtest1 (id, k, c, pad) VALUES (?, ?, 'inserted-by-benchbase-templated-sysbench-clone-cccccccccccccccccccccccccccccccccccc', 'pad-pppppppppppppppppppppppppppppppppppppppp')]]></query>
+      <types><type>INTEGER</type><type>INTEGER</type></types>
+      <values>
+         <value dist="uniform" min="10000001" max="2000000000"/>
+         <value dist="uniform" min="1" max="1000000"/>
+      </values>
+   </template>
+   <template name="Delete">
+      <query><![CDATA[DELETE FROM sbtest1 WHERE id = ?]]></query>
+      <types><type>INTEGER</type></types>
+      <values><value dist="uniform" min="1" max="100000"/></values>
+   </template>
+</templates>
