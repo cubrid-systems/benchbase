@@ -106,7 +106,26 @@ csql -C -u dba demodb@localhost -i scripts/tpcc-consistency-conditions.sql
 All four queries must report `violations: 0`. Any non-zero value indicates the
 load did not produce a spec-compliant TPC-C dataset on CUBRID.
 
-## Why There Is No `dialect-cubrid.xml`
+## Dialect files: none for TPC-C, one for TPC-H
+
+**TPC-C needs no dialect.** BenchBase's JAXB-validated `dialect.xsd` requires
+every `<dialect>` element to contain at least one `<procedure>` child. CUBRID's
+SQL is ANSI-compatible with the default BenchBase TPC-C statements — no
+overrides are needed. Shipping an empty-body `dialect-cubrid.xml` fails XSD
+validation at load time; shipping a dialect file with dummy procedures would be
+ornamental.
+
+**TPC-H does.** `benchmarks/tpch/dialect-cubrid.xml` overrides 11 of the 22
+queries (Q1, Q3, Q4, Q5, Q6, Q10, Q11, Q12, Q14, Q15, Q20), chiefly because the
+generic stream uses `INTERVAL`, which CUBRID's parser rejects. The XSD
+constraint above is satisfied the moment even one query needs an override, which
+is exactly the condition ADR-0005 named for adding the file. Without it the
+stream fails at Q1 with `Syntax error: unexpected 'INTERVAL'`.
+
+The historical rationale for TPC-C is preserved below because it still holds
+for that benchmark.
+
+## Why There Is No TPC-C `dialect-cubrid.xml`
 
 BenchBase's JAXB-validated `dialect.xsd` requires every `<dialect>` element to
 contain at least one `<procedure>` child. CUBRID's SQL is ANSI-compatible with
@@ -132,15 +151,19 @@ No other files are modified. See M7 in the plan for the formal allowlist check.
 src/main/java/com/oltpbenchmark/types/DatabaseType.java   (one enum row added)
 pom.xml                                                   (one <profile id="cubrid"> block)
 src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
+src/main/resources/benchmarks/tpch/ddl-cubrid.sql         (new)
+src/main/resources/benchmarks/tpch/dialect-cubrid.xml     (new)
 config/cubrid/                                            (new directory)
 scripts/install-cubrid-jdbc.sh                            (new)
 scripts/tpcc-consistency-conditions.sql                   (new)
 CUBRID.md                                                 (this file)
 ```
 
-Note: `dialect-cubrid.xml` does NOT exist — see "Why There Is No dialect-cubrid.xml"
-above. The spec's allowlist included it by analogy with other dialect files, but
-the JAXB XSD constraint makes the empty-overrides case a no-file case.
+Note on the TPC-C dialect: `benchmarks/tpcc/dialect-cubrid.xml` does NOT exist —
+see "Why There Is No TPC-C dialect-cubrid.xml" above. The spec's allowlist
+included it by analogy with other dialect files, but the JAXB XSD constraint
+makes the empty-overrides case a no-file case. The TPC-H one does exist and is
+listed above.
 
 When rebasing against upstream BenchBase:
 1. The `DatabaseType.java` enum row is a pure addition — no conflict expected
