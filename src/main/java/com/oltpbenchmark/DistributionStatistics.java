@@ -169,17 +169,23 @@ public class DistributionStatistics {
         + "]";
   }
 
-  public Map<String, Integer> toMap() {
-    Map<String, Integer> distMap = new LinkedHashMap<>();
-    distMap.put("Minimum Latency (microseconds)", (int) getMinimum());
-    distMap.put("25th Percentile Latency (microseconds)", (int) get25thPercentile());
-    distMap.put("Median Latency (microseconds)", (int) getMedian());
-    distMap.put("Average Latency (microseconds)", (int) getAverage());
-    distMap.put("75th Percentile Latency (microseconds)", (int) get75thPercentile());
-    distMap.put("90th Percentile Latency (microseconds)", (int) get90thPercentile());
-    distMap.put("95th Percentile Latency (microseconds)", (int) get95thPercentile());
-    distMap.put("99th Percentile Latency (microseconds)", (int) get99thPercentile());
-    distMap.put("Maximum Latency (microseconds)", (int) getMaximum());
+  /**
+   * Latencies are microseconds in a long, because a single analytical query can exceed the 35.8
+   * minutes that fit in an int. The casts below used to be to int, and a double-to-int cast
+   * saturates rather than wraps, so every percentile of a slow TPC-H stream reported exactly
+   * Integer.MAX_VALUE while the raw CSV beside it held the true value.
+   */
+  public Map<String, Long> toMap() {
+    Map<String, Long> distMap = new LinkedHashMap<>();
+    distMap.put("Minimum Latency (microseconds)", (long) getMinimum());
+    distMap.put("25th Percentile Latency (microseconds)", (long) get25thPercentile());
+    distMap.put("Median Latency (microseconds)", (long) getMedian());
+    distMap.put("Average Latency (microseconds)", (long) getAverage());
+    distMap.put("75th Percentile Latency (microseconds)", (long) get75thPercentile());
+    distMap.put("90th Percentile Latency (microseconds)", (long) get90thPercentile());
+    distMap.put("95th Percentile Latency (microseconds)", (long) get95thPercentile());
+    distMap.put("99th Percentile Latency (microseconds)", (long) get99thPercentile());
+    distMap.put("Maximum Latency (microseconds)", (long) getMaximum());
     return distMap;
   }
 }
