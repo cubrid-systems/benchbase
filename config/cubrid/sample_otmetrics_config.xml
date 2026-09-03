@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<parameters>
+
+    <!-- Connection details -->
+    <type>CUBRID</type>
+    <driver>cubrid.jdbc.driver.CUBRIDDriver</driver>
+    <url>jdbc:cubrid:localhost:33000:otmetrics:::</url>
+    <username>dba</username>
+    <password></password>
+    <isolation>TRANSACTION_READ_COMMITTED</isolation>
+    <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
+    <retries>4</retries>
+
+    <batchsize>2048</batchsize>
+    <scalefactor>0.1</scalefactor>
+
+    <!-- The workload -->
+    <terminals>1</terminals>
+    <works>
+        <work>
+            <time>60</time>
+            <rate>unlimited</rate>
+            <weights>100</weights>
+        </work>
+    </works>
+
+    <!-- Transaction Declaration -->
+    <transactiontypes>
+        <transactiontype>
+            <name>GetSessionRange</name>
+        </transactiontype>
+    </transactiontypes>
+</parameters>

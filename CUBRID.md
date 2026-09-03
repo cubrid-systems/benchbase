@@ -68,13 +68,37 @@ Five need a `ddl-cubrid.sql`, for four distinct reasons:
 |---|---|---|
 | `chbenchmark` | `DROP TABLE ... CASCADE`; CUBRID spells it `CASCADE CONSTRAINTS` | fixed |
 | `auctionmark` | self-referencing FK declared above its `PRIMARY KEY`, then a FK whose columns match the PK | fixed |
-| `sibench` | column named `value`, a CUBRID reserved word | open |
-| `otmetrics` | same reserved word | open |
-| `wikipedia` | `varbinary(1024)`, a type CUBRID does not have | open |
+| `sibench` | column named `value`, a CUBRID reserved word | DDL + dialect written |
+| `otmetrics` | same reserved word | fixed |
+| `wikipedia` | `varbinary`, `binary` and `TEXT`, three types CUBRID does not have | open |
 
-`sibench` needs more than DDL: its procedures use the bare word in
-`ORDER BY value ASC`, so quoting the column in the schema forces a dialect file
-to match.
+`value` is rejected wherever it appears unquoted, in queries exactly as in DDL,
+and bracket-quoting is accepted in both:
+
+```sql
+CREATE TABLE t (id INT PRIMARY KEY, value INT)   -- Syntax error: unexpected 'value'
+SELECT id FROM t ORDER BY value ASC              -- Syntax error: unexpected 'value'
+UPDATE t SET value = value + 1 WHERE id = 1      -- Syntax error: unexpected 'value'
+CREATE TABLE t (id INT PRIMARY KEY, [value] INT) -- Execute OK
+```
+
+That splits the two benchmarks that hit it. **`otmetrics` needs only a schema
+file**: no SQL it issues names the column -- `GetSessionRange`, its one
+procedure, uses `SELECT *`, and `OTMetricsLoader` goes through
+`SQLUtil.getInsertSQL`, which omits column names for CUBRID. **`sibench` needs
+both**: each of its two procedures names the column, in `ORDER BY value ASC` and
+in `UPDATE ... SET value = value + 1`, so the schema and a dialect have to be
+quoted together.
+
+`wikipedia` is the one with real work in it. Nine of its twelve tables fail, on
+three types CUBRID does not have: `varbinary(n)` (`ipblocks`, `logging`,
+`page_restrictions`, `recentchanges`, `user_groups`), `binary(n)` (`page`,
+`page_backup`, `revision`) and `TEXT` (`text`). `VARCHAR(n)`, `CHAR(n)` and
+`STRING` all work as replacements, and `VARCHAR` is the right one for the binary
+columns rather than `BIT VARYING`, because `WikipediaLoader` binds them with
+`setString` -- twenty-eight calls, and no `setBytes` anywhere. The
+`auto_increment` in that file is only ever a `TODO` comment, never a column
+definition.
 
 YCSB is the cheapest target in the set: a config file and nothing else. Its
 schema is one table with no foreign keys, so `getDatabaseDDLPath()` falls back

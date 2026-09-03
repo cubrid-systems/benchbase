@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--
+  CUBRID overrides for SIBench.
+
+  SITEST's second column is named `value`, which CUBRID reserves. The word is
+  rejected wherever it appears unquoted, in queries as much as in DDL:
+
+      UPDATE t SET value = value + 1 WHERE id = 1
+        Syntax error: unexpected 'value'
+      SELECT id FROM t ORDER BY value ASC
+        Syntax error: unexpected 'value'
+
+  Bracket-quoting is accepted in both positions. Both of SIBench's procedures
+  name the column, so both are overridden here; the statements are otherwise
+  identical to the generic ones.
+-->
+<dialects>
+    <dialect type="CUBRID">
+        <procedure name="MinRecord">
+            <statement name="minStmt">
+                SELECT id FROM SITEST ORDER BY [value] ASC LIMIT 1
+            </statement>
+        </procedure>
+        <procedure name="UpdateRecord">
+            <statement name="updateStmt">
+                UPDATE SITEST SET [value] = [value] + 1 WHERE id = ?
+            </statement>
+        </procedure>
+    </dialect>
+</dialects>
