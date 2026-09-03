@@ -25,13 +25,40 @@ summary, see [CUBRID Support](./README.md#cubrid-support) in the README.
 | Benchmark | Status | CUBRID-specific files |
 |-----------|--------|-----------------------|
 | TPC-C | Ready | `src/main/resources/benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | DDL and dialect ready; no sample config shipped yet | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml` |
-| YCSB | Ready | `config/cubrid/sample_ycsb_config.xml` — no DDL and no dialect needed |
-| sysbench OLTP clone | Ready, through upstream's `templated` benchmark | `config/cubrid/sysbench_templated_config.xml`, `config/cubrid/sysbench_templates.xml` |
+| TPC-H | Schema and all 22 queries verified; end-to-end run still pending | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml`, `config/cubrid/sample_tpch_config.xml` |
+| YCSB | Ready, verified end to end | `config/cubrid/sample_ycsb_config.xml` — no DDL and no dialect needed |
+| CH-benCHmark | Schema ready; no config yet | `src/main/resources/benchmarks/chbenchmark/ddl-cubrid.sql` |
+| AuctionMark | Schema ready; no config yet | `src/main/resources/benchmarks/auctionmark/ddl-cubrid.sql` |
+| sysbench OLTP clone | Config committed, never run | `config/cubrid/sysbench_templated_config.xml`, `config/cubrid/sysbench_templates.xml` |
 
-Running TPC-H today means writing a config XML modelled on
-`config/cubrid/sample_tpcc_config.xml` — the schema and the query overrides are
-already in place, only the workload descriptor is missing.
+### What the rest of the suite would need
+
+Every BenchBase benchmark ships a `ddl-generic.sql`. Feeding each one to CUBRID
+11.5 -- on an empty database, then a second time to exercise the `DROP` path --
+sorts the suite into two groups. Thirteen are accepted unchanged:
+
+`epinions` `hyadapt` `noop` `resourcestresser` `seats` `smallbank` `tatp`
+`tpcc` `tpcds` `tpch` `twitter` `voter` `ycsb`
+
+For those, a config XML is the only missing piece, exactly as it was for YCSB.
+Two caveats: a schema that creates is not a benchmark that runs -- the
+procedures and the loader have to work too, and only YCSB has been taken all the
+way -- and `tpcds` has no benchmark class in `config/plugin.xml`, so it is not
+reachable regardless.
+
+Five need a `ddl-cubrid.sql`, for four distinct reasons:
+
+| Benchmark | Why the generic DDL fails on CUBRID | Status |
+|---|---|---|
+| `chbenchmark` | `DROP TABLE ... CASCADE`; CUBRID spells it `CASCADE CONSTRAINTS` | fixed |
+| `auctionmark` | self-referencing FK declared above its `PRIMARY KEY`, then a FK whose columns match the PK | fixed |
+| `sibench` | column named `value`, a CUBRID reserved word | open |
+| `otmetrics` | same reserved word | open |
+| `wikipedia` | `varbinary(1024)`, a type CUBRID does not have | open |
+
+`sibench` needs more than DDL: its procedures use the bare word in
+`ORDER BY value ASC`, so quoting the column in the schema forces a dialect file
+to match.
 
 YCSB is the cheapest target in the set: a config file and nothing else. Its
 schema is one table with no foreign keys, so `getDatabaseDDLPath()` falls back
@@ -261,16 +288,32 @@ engines needing genuine overrides (`db2`, `monetdb`, `oracle`, `phoenix`,
 
 The CUBRID-specific TPC-C adjustments live in `ddl-cubrid.sql` instead:
 
-- `DROP TABLE ... CASCADE CONSTRAINTS`, Oracle-style, which CUBRID requires.
+- `DROP TABLE ... CASCADE CONSTRAINTS`, Oracle-style. This is a convenience, not
+  a requirement: the generic TPC-C file drops child tables before parents, and
+  that ordering alone gets it through CUBRID twice in a row. `CASCADE
+  CONSTRAINTS` buys independence from the ordering. What CUBRID does reject is a
+  bare `CASCADE`, which is why CH-benCHmark needs its own file.
 - `new_order` declares its primary key before its foreign key, so CUBRID does
   not reject the second index when the FK and PK cover identical columns.
 
 **TPC-H ships one.** `benchmarks/tpch/dialect-cubrid.xml` overrides 11 of the 22
 queries (Q1, Q3, Q4, Q5, Q6, Q10, Q11, Q12, Q14, Q15, Q20), chiefly because the
-generic stream uses `INTERVAL`, which CUBRID's parser rejects. Without the file
-the stream fails at Q1 with `Syntax error: unexpected 'INTERVAL'`. The XSD
-constraint above stops mattering the moment even one query needs an override,
-which is exactly the condition for adding the file.
+generic stream does date arithmetic with an `INTERVAL` literal, which CUBRID's
+parser rejects. The two forms, run against CUBRID 11.5:
+
+```sql
+-- generic
+... WHERE l_shipdate <= DATE '1998-12-01' - INTERVAL 90 DAY
+    ERROR: Syntax error: unexpected 'INTERVAL'
+
+-- dialect-cubrid.xml
+... WHERE l_shipdate <= DATE_SUB(DATE '1998-12-01', INTERVAL 90 DAY)
+    1 row selected.
+```
+
+So the generic stream fails at Q1 and never reaches Q2. The XSD constraint above
+stops mattering the moment even one query needs an override, which is exactly
+the condition for adding the file.
 
 ## Where the sysbench templates live
 
@@ -290,27 +333,38 @@ changing the templates too.
 
 ## Fork allowlist and rebase hygiene
 
-Three upstream source files are modified, `README.md` gains two additive blocks,
+Seven upstream source files are modified, `README.md` gains two additive blocks,
 and everything else is a new file. No other path is touched.
 
 ```
-src/main/java/com/oltpbenchmark/types/DatabaseType.java   (one enum row added)
-src/main/java/com/oltpbenchmark/util/SQLUtil.java         (getSchema() fallback -- see below)
-pom.xml                                                   (one <profile id="cubrid"> block)
-README.md                                                 (fork banner + CUBRID Support section)
-CUBRID.md                                                 (this file)
-src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
-src/main/resources/benchmarks/tpch/ddl-cubrid.sql         (new)
-src/main/resources/benchmarks/tpch/dialect-cubrid.xml     (new)
-config/cubrid/                                            (new directory)
-config/postgres/harness_tpcc_config.xml                   (new -- cross-engine comparison)
-config/mysql/harness_tpcc_config.xml                      (new -- cross-engine comparison)
-scripts/install-cubrid-jdbc.sh                            (new)
-scripts/tpcc-consistency-conditions.sql                   (new)
-scripts/tpcc-consistency-conditions-pg.sql                (new)
-scripts/tpcc-consistency-conditions-mysql.sql             (new)
-data/templated/                                           (untouched -- see above)
+src/main/java/com/oltpbenchmark/types/DatabaseType.java      (one enum row added)
+src/main/java/com/oltpbenchmark/util/SQLUtil.java            (getSchema() fallback -- see below)
+src/main/java/com/oltpbenchmark/LatencyRecord.java           (latency widened to int64 -- see below)
+src/main/java/com/oltpbenchmark/ThreadBench.java             (same)
+src/main/java/com/oltpbenchmark/DistributionStatistics.java  (same)
+src/main/java/com/oltpbenchmark/util/ResultWriter.java       (same)
+pom.xml                                                      (one <profile id="cubrid"> block)
+README.md                                                    (fork banner + CUBRID Support section)
+CUBRID.md                                                    (this file)
+src/main/resources/benchmarks/tpcc/ddl-cubrid.sql            (new)
+src/main/resources/benchmarks/tpch/ddl-cubrid.sql            (new)
+src/main/resources/benchmarks/tpch/dialect-cubrid.xml        (new)
+src/main/resources/benchmarks/chbenchmark/ddl-cubrid.sql     (new)
+src/main/resources/benchmarks/auctionmark/ddl-cubrid.sql     (new)
+config/cubrid/                                               (new directory)
+config/postgres/harness_tpcc_config.xml                      (new -- cross-engine comparison)
+config/mysql/harness_tpcc_config.xml                         (new -- cross-engine comparison)
+scripts/install-cubrid-jdbc.sh                               (new)
+scripts/tpcc-consistency-conditions.sql                      (new)
+scripts/tpcc-consistency-conditions-pg.sql                   (new)
+scripts/tpcc-consistency-conditions-mysql.sql                (new)
+data/templated/                                              (untouched -- see above)
 ```
+
+The four latency files came in as one commit that widened transaction latency
+from int32 to int64 microseconds. Like the `getSchema()` fallback it names no
+engine, so it belongs upstream rather than here; it is listed as
+upstream-pending on the same terms.
 
 Verify the allowlist against reality with:
 

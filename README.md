@@ -66,9 +66,14 @@ rationale, the rebase allowlist, and the reasoning behind the defaults.
 | Benchmark | Status |
 |-----------|--------|
 | TPC-C | Ready — `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | DDL and dialect ready; no sample config shipped yet |
+| TPC-H | `config/cubrid/sample_tpch_config.xml` — schema and all 22 queries verified, end-to-end run pending |
 | YCSB | Ready — `config/cubrid/sample_ycsb_config.xml`, no CUBRID DDL or dialect needed |
-| sysbench OLTP clone | Ready, through upstream's `templated` benchmark |
+| CH-benCHmark, AuctionMark | Schema ready (`ddl-cubrid.sql`); no config yet |
+| sysbench OLTP clone | Config committed, never run |
+
+Thirteen more benchmarks take upstream's generic schema on CUBRID unchanged and
+need only a config; five need their own DDL. Which, and why, is in
+[What the rest of the suite would need](./CUBRID.md#what-the-rest-of-the-suite-would-need).
 
 ### Prerequisites
 
@@ -101,6 +106,14 @@ TPC-C, full cycle:
 
 ```bash
 java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml \
+    --create=true --load=true --execute=true
+```
+
+TPC-H. `serial` in the shipped config runs each of the 22 queries exactly once,
+in order, which is the shape you want when checking a dialect covers the stream:
+
+```bash
+java -jar benchbase.jar -b tpch -c config/cubrid/sample_tpch_config.xml \
     --create=true --load=true --execute=true
 ```
 
