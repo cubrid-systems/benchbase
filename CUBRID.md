@@ -26,19 +26,35 @@ summary, see [CUBRID Support](./README.md#cubrid-support) in the README.
 |-----------|--------|-----------------------|
 | TPC-C | Ready | `src/main/resources/benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
 | TPC-H | DDL and dialect ready; no sample config shipped yet | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml` |
+| YCSB | Ready | `config/cubrid/sample_ycsb_config.xml` — no DDL and no dialect needed |
 | sysbench OLTP clone | Ready, through upstream's `templated` benchmark | `config/cubrid/sysbench_templated_config.xml`, `config/cubrid/sysbench_templates.xml` |
 
 Running TPC-H today means writing a config XML modelled on
 `config/cubrid/sample_tpcc_config.xml` — the schema and the query overrides are
 already in place, only the workload descriptor is missing.
 
+YCSB is the cheapest target in the set: a config file and nothing else. Its
+schema is one table with no foreign keys, so `getDatabaseDDLPath()` falls back
+to `benchmarks/ycsb/ddl-generic.sql`, which CUBRID accepts as written --
+`DROP TABLE IF EXISTS`, an `INT PRIMARY KEY`, and ten `VARCHAR(100)` columns.
+None of the six procedures needs a SQL override, including
+`ReadModifyWriteRecord`, whose `SELECT ... FOR UPDATE` CUBRID supports and whose
+single-table shape clears every restriction the server places on that clause
+(no aggregate, no `DISTINCT`, no derived table, no FOR-UPDATE subquery).
+
+This was run end to end against CUBRID 11.5 -- create, load, and a six-procedure
+workload -- with no aborted transactions and no unexpected SQL errors. That run
+was against a debug build, so it establishes that the benchmark works, not how
+fast it is.
+
 ## Prerequisites
 
 - A **CUBRID 11.x server** with the target database created and its broker
   reachable at the host and port named in your config XML. The shipped TPC-C
-  sample expects `demodb` on port 33000; the sysbench sample expects `sbench`
-  on port 35000.
-- **Java 23** and **Maven** (or the bundled `./mvnw`).
+  sample expects `demodb` on port 33000, the YCSB sample a `ycsb` database on
+  the same port, and the sysbench sample `sbench` on port 35000.
+- **Java 23** and **Maven** (or the bundled `./mvnw`). A JDK 21 toolchain also
+  works -- see [Building on a JDK older than 23](#building-on-a-jdk-older-than-23).
 - The **CUBRID JDBC jar** in your local Maven repository. CUBRID does not
   publish to Maven Central, so the `cubrid:cubrid-jdbc` coordinate used by the
   `cubrid` profile has to be satisfied locally:
@@ -67,6 +83,23 @@ tar xvzf target/benchbase-cubrid.tgz -C target/
 cd target/benchbase-cubrid
 ```
 
+### Building on a JDK older than 23
+
+Upstream moved the project to Java 23. The CUBRID integration adds no Java, and
+the tree compiles clean under Java 21 -- `-Werror` is on, so that is a real
+result and not a suppressed one -- which means a machine with only a JDK 21
+toolchain can build the distribution by overriding the compiler level:
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+    ./mvnw clean package -P cubrid -DskipTests \
+    -Dmaven.compiler.source=21 -Dmaven.compiler.target=21
+```
+
+Keep the override on the command line. `pom.xml` stays at 23 so the fork does
+not diverge from upstream over one machine's toolchain, and the jar this
+produces targets 21, so it needs a JRE of at least that to run.
+
 ## Run
 
 TPC-C, full cycle:
@@ -86,6 +119,15 @@ java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml --load=t
 java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml --execute=true
 ```
 
+YCSB, full cycle. `scalefactor` here is thousands of rows in `USERTABLE`, so
+the shipped value of 10 loads 10,000:
+
+```bash
+java -jar benchbase.jar -b ycsb \
+    -c config/cubrid/sample_ycsb_config.xml \
+    --create=true --load=true --execute=true
+```
+
 The sysbench clone runs through upstream's `templated` plugin, which has no
 loader — the table has to exist and be populated first. The DDL and the
 expected row range are in a comment at the top of the config file:
@@ -99,18 +141,81 @@ Results (tpmC, CSV, JSON) land in `results/`.
 
 ## Configuration
 
-`config/cubrid/sample_tpcc_config.xml` is the starting point:
+Every config XML has the same shape, and the elements below are the whole set
+BenchBase reads. Defaults are the framework's, not this fork's; where the
+shipped CUBRID samples differ, that is called out.
 
-| Parameter | Default | Notes |
-|---------------|--------------------------------------|--------------------------------------|
-| `type` | `CUBRID` | Selects `ddl-cubrid.sql` and, where present, `dialect-cubrid.xml` |
+### Connection
+
+| Element | Shipped value | Notes |
+|---|---|---|
+| `type` | `CUBRID` | Selects `ddl-cubrid.sql` / `dialect-cubrid.xml` by name, and the identifier-escaping and column-name rules in `DatabaseType` |
 | `driver` | `cubrid.jdbc.driver.CUBRIDDriver` | |
-| `url` | `jdbc:cubrid:localhost:33000:demodb:::` | Change host, port, and database as needed |
-| `username` | `dba` | CUBRID default DBA account |
-| `password` | (empty) | CUBRID `dba` default is an empty password |
-| `scalefactor` | `1` | Number of TPC-C warehouses |
-| `terminals` | `1` | Concurrent virtual users |
-| `isolation` | `TRANSACTION_READ_COMMITTED` | See [Isolation](#isolation) |
+| `url` | `jdbc:cubrid:<host>:<port>:<db>:::` | TPC-C and YCSB samples use port 33000, sysbench 35000 |
+| `username` / `password` | `dba` / empty | CUBRID's default DBA account |
+| `isolation` | `TRANSACTION_READ_COMMITTED` | Framework default is the driver's. See [Isolation](#isolation) |
+| `reconnectOnConnectionFailure` | `true` | Framework default `false` |
+| `newConnectionPerTxn` | unset (`false`) | Turning it on measures connection setup as much as the workload |
+
+### Load and workload
+
+| Element | Default | Effect |
+|---|---|---|
+| `scalefactor` | `1.0` | Benchmark-specific; see below |
+| `terminals` | required | Client threads during `--execute` |
+| `batchsize` | `128` | Rows per JDBC batch during `--load` |
+| `loaderThreads` | CPU count | A **ceiling**, not a count; see below |
+| `works/work/time` | `0` | Seconds per phase. `0` is untimed and valid only with `serial` |
+| `works/work/warmup` | `0` | Seconds discarded before measurement begins |
+| `works/work/rate` | required | Target requests/second, or `unlimited` |
+| `works/work/weights` | required | Transaction mix, in the order `transactiontypes` declares them |
+| `works/work/@arrival` | `regular` | `poisson` for an open-loop arrival process |
+| `works/work/active_terminals` | `terminals` | Lets one phase use fewer terminals than are allocated |
+| `works/work/serial` | `false` | Each transaction type once, in order; forces one terminal |
+| `ddlpath` | unset | Filesystem DDL, overriding the classpath lookup. The startup banner prints `DDL Path: null` when unset, which is normal |
+| `sessionsetupfile` | unset | SQL run on every new connection |
+| `afterload` | unset | SQL run once after `--load` |
+| `selectivity` | unset | Only consulted by benchmarks that declare it |
+
+### What `scalefactor` means, per benchmark
+
+| Benchmark | `scalefactor` is | Shipped |
+|---|---|---|
+| TPC-C | Warehouses | `1` |
+| TPC-H | The TPC-H scale factor handed to the dbgen generators | no config yet |
+| YCSB | Thousands of rows in `USERTABLE` (`RECORD_COUNT = 1000`) | `10` → 10,000 rows |
+
+YCSB reads two parameters of its own, neither of which the shipped config sets:
+`fieldSize` (characters per field; default and hard maximum 100) and
+`skewFactor` (the Zipfian constant; default 0.99, rejected unless strictly
+between 0 and 1).
+
+### `loaderThreads` is a ceiling, not a thread count
+
+This is the parameter most likely to mislead. `loaderThreads` becomes
+`maxConcurrent` in `ThreadUtil.runLoaderThreads()`; how many loader threads
+exist at all is decided by each benchmark's `createLoaderThreads()`. Raising it
+cannot create parallelism the benchmark never produced.
+
+The three benchmarks partition differently:
+
+- **TPC-C** creates one loader thread per warehouse, so `scalefactor` governs
+  load parallelism as well as data size.
+- **TPC-H** creates one per table, so its load parallelism is fixed and
+  independent of `scalefactor`.
+- **YCSB** splits the row range into chunks of `THREAD_BATCH_SIZE = 50000`:
+
+  | `scalefactor` | Rows | Loader threads |
+  |---:|---:|---:|
+  | 10 | 10,000 | 1 |
+  | 50 | 50,000 | 1 |
+  | 100 | 100,000 | 2 |
+  | 1000 | 1,000,000 | 20 |
+
+At YCSB's shipped `scalefactor` of 10 the load is single-threaded whatever
+`loaderThreads` says: the banner reports `Loader Threads: 16` and the pool is
+still built with a size of 1. Parallelise a YCSB load by raising `scalefactor`
+past 50, not by raising `loaderThreads`.
 
 ## Isolation
 

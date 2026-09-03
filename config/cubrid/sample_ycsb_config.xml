@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<parameters>
+
+    <!-- Connection details. The schema is a single USERTABLE with no foreign
+         keys, so this needs no ddl-cubrid.sql: BenchmarkModule falls back to
+         benchmarks/ycsb/ddl-generic.sql, which CUBRID accepts as written. -->
+    <type>CUBRID</type>
+    <driver>cubrid.jdbc.driver.CUBRIDDriver</driver>
+    <url>jdbc:cubrid:localhost:33000:ycsb:::</url>
+    <username>dba</username>
+    <password></password>
+    <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
+
+    <!-- READ COMMITTED, matching this fork's other CUBRID configs. Note that
+         ReadModifyWriteRecord issues SELECT ... FOR UPDATE, so its row locks
+         are taken explicitly and do not depend on the isolation level. -->
+    <isolation>TRANSACTION_READ_COMMITTED</isolation>
+    <batchsize>128</batchsize>
+
+    <!-- Scalefactor in YCSB is *1000 the number of rows in USERTABLE. -->
+    <scalefactor>10</scalefactor>
+
+    <!-- The workload -->
+    <terminals>4</terminals>
+    <works>
+        <work>
+            <time>30</time>
+            <rate>unlimited</rate>
+            <weights>50,5,15,10,10,10</weights>
+        </work>
+    </works>
+
+    <!-- YCSB Procedures declaration -->
+    <transactiontypes>
+        <transactiontype>
+            <name>ReadRecord</name>
+        </transactiontype>
+        <transactiontype>
+            <name>InsertRecord</name>
+        </transactiontype>
+        <transactiontype>
+            <name>ScanRecord</name>
+        </transactiontype>
+        <transactiontype>
+            <name>UpdateRecord</name>
+        </transactiontype>
+        <transactiontype>
+            <name>DeleteRecord</name>
+        </transactiontype>
+        <transactiontype>
+            <name>ReadModifyWriteRecord</name>
+        </transactiontype>
+    </transactiontypes>
+</parameters>

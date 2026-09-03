@@ -67,13 +67,15 @@ rationale, the rebase allowlist, and the reasoning behind the defaults.
 |-----------|--------|
 | TPC-C | Ready — `config/cubrid/sample_tpcc_config.xml` |
 | TPC-H | DDL and dialect ready; no sample config shipped yet |
+| YCSB | Ready — `config/cubrid/sample_ycsb_config.xml`, no CUBRID DDL or dialect needed |
 | sysbench OLTP clone | Ready, through upstream's `templated` benchmark |
 
 ### Prerequisites
 
 - A running **CUBRID 11.x** server with the target database created and its
   broker reachable at the host and port in your config XML.
-- **Java 23** and **Maven** (or the bundled `./mvnw`).
+- **Java 23** and **Maven** (or the bundled `./mvnw`). JDK 21 also builds this
+  tree — see [Building on a JDK older than 23](./CUBRID.md#building-on-a-jdk-older-than-23).
 - The **CUBRID JDBC jar** in your local Maven repository. CUBRID does not publish
   to Maven Central, so the `cubrid:cubrid-jdbc` coordinate used by the `cubrid`
   profile has to be satisfied locally:
@@ -102,6 +104,14 @@ java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml \
     --create=true --load=true --execute=true
 ```
 
+YCSB, full cycle. Its `scalefactor` is thousands of rows in `USERTABLE`, so the
+shipped `10` loads 10,000:
+
+```bash
+java -jar benchbase.jar -b ycsb -c config/cubrid/sample_ycsb_config.xml \
+    --create=true --load=true --execute=true
+```
+
 The sysbench clone runs through upstream's `templated` plugin, which has no
 loader — `sbtest1` must already exist and be populated. Its DDL and expected row
 range are in a comment at the top of the config:
@@ -110,6 +120,12 @@ range are in a comment at the top of the config:
 java -jar benchbase.jar -b templated \
     -c config/cubrid/sysbench_templated_config.xml --execute=true
 ```
+
+Which config elements exist, what each does, and what `scalefactor` means for
+each benchmark are documented in
+[Configuration](./CUBRID.md#configuration). Read
+[`loaderThreads` is a ceiling, not a thread count](./CUBRID.md#loaderthreads-is-a-ceiling-not-a-thread-count)
+before tuning a load — it is the parameter most likely to mislead.
 
 ### Verifying a load
 
