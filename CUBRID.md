@@ -1,183 +1,238 @@
-# BenchBase — CUBRID Integration
+# BenchBase on CUBRID
 
-Internal fork of BenchBase enabling CUBRID 11.x as a TPC-C benchmark target.
-Phase 1 deliverable per the consensus plan at
-`/data/cub_sys/.omc/plans/cubrid-benchmarking-phase1.md`.
+CUBRID's fork of [`cmu-db/benchbase`](https://github.com/cmu-db/benchbase),
+adding CUBRID 11.x as a benchmark target.
+
+This file is the reference for the integration — what it covers, why the
+defaults are what they are, and which paths the fork owns. For a build-and-run
+summary, see [CUBRID Support](./README.md#cubrid-support) in the README.
+
+**Contents**
+
+- [Coverage](#coverage)
+- [Prerequisites](#prerequisites)
+- [Build](#build)
+- [Run](#run)
+- [Configuration](#configuration)
+- [Isolation](#isolation)
+- [Consistency conditions](#consistency-conditions)
+- [Dialect files](#dialect-files)
+- [Where the sysbench templates live](#where-the-sysbench-templates-live)
+- [Fork allowlist and rebase hygiene](#fork-allowlist-and-rebase-hygiene)
+
+## Coverage
+
+| Benchmark | Status | CUBRID-specific files |
+|-----------|--------|-----------------------|
+| TPC-C | Ready | `src/main/resources/benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
+| TPC-H | DDL and dialect ready; no sample config shipped yet | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml` |
+| sysbench OLTP clone | Ready, through upstream's `templated` benchmark | `config/cubrid/sysbench_templated_config.xml`, `config/cubrid/sysbench_templates.xml` |
+
+Running TPC-H today means writing a config XML modelled on
+`config/cubrid/sample_tpcc_config.xml` — the schema and the query overrides are
+already in place, only the workload descriptor is missing.
 
 ## Prerequisites
 
-- **CUBRID 11.x server** running with `demodb` created (or your target DB).
-  Broker must be listening on port 33000 (default; configurable in the config
-  XML). See `scripts/cubrid_lifecycle.sh` in the parent harness for setup.
-- **CUBRID JDBC jar** installed into the local Maven repository. Run:
+- A **CUBRID 11.x server** with the target database created and its broker
+  reachable at the host and port named in your config XML. The shipped TPC-C
+  sample expects `demodb` on port 33000; the sysbench sample expects `sbench`
+  on port 35000.
+- **Java 23** and **Maven** (or the bundled `./mvnw`).
+- The **CUBRID JDBC jar** in your local Maven repository. CUBRID does not
+  publish to Maven Central, so the `cubrid:cubrid-jdbc` coordinate used by the
+  `cubrid` profile has to be satisfied locally:
+
   ```bash
-  bash scripts/install-cubrid-jdbc.sh
+  ./scripts/install-cubrid-jdbc.sh                  # auto-detects $CUBRID/jdbc/cubrid-jdbc-*.jar
+  ./scripts/install-cubrid-jdbc.sh /path/to/cubrid-jdbc-11.3.2.0058.jar
   ```
-  This script auto-detects the jar from `$CUBRID/jdbc/cubrid-jdbc-*.jar` (the
-  installed CUBRID ships it). Pass an explicit path as the first argument if
-  needed:
-  ```bash
-  bash scripts/install-cubrid-jdbc.sh /path/to/cubrid-jdbc-11.3.2.0058.jar
-  ```
-- **Java 23** and **Maven 3.x** on PATH.
+
+  The script is idempotent: re-running it with the same jar is a no-op.
 
 ## Build
 
 ```bash
-# 1. Install the CUBRID JDBC jar into the local Maven repo (one-time)
-bash scripts/install-cubrid-jdbc.sh
-
-# 2. Package BenchBase with the CUBRID profile
-mvn -P cubrid package -DskipTests
+./scripts/install-cubrid-jdbc.sh      # one-time, per jar version
+./mvnw clean package -P cubrid -DskipTests
 ```
 
-The resulting artifact is `target/benchbase-cubrid.tgz`. Unpack it:
+This produces `target/benchbase-cubrid.tgz` (and `.zip`). Unpack it before
+running — BenchBase reads `config/` and its dependencies relative to the
+expanded distribution, and running the jar outside that layout fails with
+`java.lang.NoClassDefFoundError`:
 
 ```bash
-tar -xzf target/benchbase-cubrid.tgz -C target/
+tar xvzf target/benchbase-cubrid.tgz -C target/
+cd target/benchbase-cubrid
 ```
 
 ## Run
 
-Full create + load + execute cycle against CUBRID:
+TPC-C, full cycle:
 
 ```bash
-java -jar target/benchbase-cubrid/benchbase.jar \
-    -b tpcc \
+java -jar benchbase.jar -b tpcc \
     -c config/cubrid/sample_tpcc_config.xml \
-    --create=true \
-    --load=true \
-    --execute=true
+    --create=true --load=true --execute=true
 ```
 
-Results (tpmC, CSV, JSON) are written to the `results/` directory.
-
-To run only schema creation, loading, or execution independently:
+Each phase can also run on its own, which is the usual shape when iterating on
+a workload against an already-loaded database:
 
 ```bash
-# Schema only
-java -jar target/benchbase-cubrid/benchbase.jar -b tpcc \
-    -c config/cubrid/sample_tpcc_config.xml --create=true
-
-# Load only
-java -jar target/benchbase-cubrid/benchbase.jar -b tpcc \
-    -c config/cubrid/sample_tpcc_config.xml --load=true
-
-# Execute only (after schema + load)
-java -jar target/benchbase-cubrid/benchbase.jar -b tpcc \
-    -c config/cubrid/sample_tpcc_config.xml --execute=true
+java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml --create=true
+java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml --load=true
+java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml --execute=true
 ```
+
+The sysbench clone runs through upstream's `templated` plugin, which has no
+loader — the table has to exist and be populated first. The DDL and the
+expected row range are in a comment at the top of the config file:
+
+```bash
+java -jar benchbase.jar -b templated \
+    -c config/cubrid/sysbench_templated_config.xml --execute=true
+```
+
+Results (tpmC, CSV, JSON) land in `results/`.
 
 ## Configuration
 
-Edit `config/cubrid/sample_tpcc_config.xml` to adjust:
+`config/cubrid/sample_tpcc_config.xml` is the starting point:
 
-| Parameter     | Default                              | Notes                                  |
-|---------------|--------------------------------------|----------------------------------------|
-| `url`         | `jdbc:cubrid:localhost:33000:demodb:::` | Change host/port/db as needed        |
-| `username`    | `dba`                                | CUBRID default DBA account             |
-| `password`    | (empty)                              | CUBRID dba default = empty password    |
-| `scalefactor` | `1`                                  | Number of TPC-C warehouses             |
-| `terminals`   | `1`                                  | Concurrent virtual users               |
-| `isolation`   | `TRANSACTION_READ_COMMITTED`         | See isolation note below               |
+| Parameter | Default | Notes |
+|---------------|--------------------------------------|--------------------------------------|
+| `type` | `CUBRID` | Selects `ddl-cubrid.sql` and, where present, `dialect-cubrid.xml` |
+| `driver` | `cubrid.jdbc.driver.CUBRIDDriver` | |
+| `url` | `jdbc:cubrid:localhost:33000:demodb:::` | Change host, port, and database as needed |
+| `username` | `dba` | CUBRID default DBA account |
+| `password` | (empty) | CUBRID `dba` default is an empty password |
+| `scalefactor` | `1` | Number of TPC-C warehouses |
+| `terminals` | `1` | Concurrent virtual users |
+| `isolation` | `TRANSACTION_READ_COMMITTED` | See [Isolation](#isolation) |
 
-## Isolation Note
+## Isolation
 
-READ_COMMITTED is the Phase 1 default, empirically selected. The load phase under
-REPEATABLE_READ on CUBRID 11.5 at SF=1 was markedly slower than RC (observed
-during integration). The load under RC passed all four TPC-C consistency
-conditions (§3.3.2) with zero violations — see
-`scripts/tpcc-consistency-conditions.sql` and the archived output in
-`.omc/reports/benchbase-run-results/m3-consistency.out`.
+READ COMMITTED is the shipped default, chosen empirically rather than on
+principle. The load phase under REPEATABLE READ on CUBRID 11.5 at scale factor 1
+was markedly slower than under READ COMMITTED during integration, and the READ
+COMMITTED load passed all four TPC-C §3.3.2 consistency conditions with zero
+violations.
 
-The formal M0.5 empirical probe (RC vs REP_READ vs SERIALIZABLE × N reps ×
-numeric consistency-gate) is deferred to Phase 2 per ADR-3 in the plan. Update
-`<isolation>` here when the probe commits a different primary level.
+That is a single observation, not a probe. A proper comparison — READ COMMITTED
+against REPEATABLE READ against SERIALIZABLE, repeated, gated on a numeric
+consistency check — has not been run. Treat the default as provisional and
+update `<isolation>` here if a real probe settles on a different level.
 
-## Consistency Conditions
+## Consistency conditions
 
-After `--load=true`, verify TPC-C §3.3.2 conditions 1–4:
+After `--load=true`, verify TPC-C §3.3.2 conditions 1–4. Every query must
+report `violations: 0`; anything else means the load did not produce a
+spec-compliant dataset:
 
 ```bash
-source /data/cub_sys/.cubrid.sh
 csql -C -u dba demodb@localhost -i scripts/tpcc-consistency-conditions.sql
 ```
 
-All four queries must report `violations: 0`. Any non-zero value indicates the
-load did not produce a spec-compliant TPC-C dataset on CUBRID.
+Equivalents for cross-engine comparison runs ship alongside it —
+`scripts/tpcc-consistency-conditions-pg.sql` and
+`scripts/tpcc-consistency-conditions-mysql.sql`, paired with
+`config/postgres/harness_tpcc_config.xml` and
+`config/mysql/harness_tpcc_config.xml`. They exist so a CUBRID number can be
+read next to a PostgreSQL or MySQL number produced by an identically shaped run.
 
-## Dialect files: none for TPC-C, one for TPC-H
+## Dialect files
 
-**TPC-C needs no dialect.** BenchBase's JAXB-validated `dialect.xsd` requires
-every `<dialect>` element to contain at least one `<procedure>` child. CUBRID's
-SQL is ANSI-compatible with the default BenchBase TPC-C statements — no
-overrides are needed. Shipping an empty-body `dialect-cubrid.xml` fails XSD
-validation at load time; shipping a dialect file with dummy procedures would be
-ornamental.
+**TPC-C ships none, on purpose.** BenchBase validates dialect files against
+`dialect.xsd`, which requires every `<dialect>` element to contain at least one
+`<procedure>` child. CUBRID's SQL is ANSI-compatible with the default BenchBase
+TPC-C statements, so there is nothing to override: an empty-body
+`dialect-cubrid.xml` would fail XSD validation at load time, and one padded with
+dummy procedures would be ornamental. This matches upstream, where
+`dialect-postgres.xml` and `dialect-mysql.xml` are likewise absent and only
+engines needing genuine overrides (`db2`, `monetdb`, `oracle`, `phoenix`,
+`singlestore`, `sqlite`, `sqlserver`, `timesten`) ship one.
 
-**TPC-H does.** `benchmarks/tpch/dialect-cubrid.xml` overrides 11 of the 22
+The CUBRID-specific TPC-C adjustments live in `ddl-cubrid.sql` instead:
+
+- `DROP TABLE ... CASCADE CONSTRAINTS`, Oracle-style, which CUBRID requires.
+- `new_order` declares its primary key before its foreign key, so CUBRID does
+  not reject the second index when the FK and PK cover identical columns.
+
+**TPC-H ships one.** `benchmarks/tpch/dialect-cubrid.xml` overrides 11 of the 22
 queries (Q1, Q3, Q4, Q5, Q6, Q10, Q11, Q12, Q14, Q15, Q20), chiefly because the
-generic stream uses `INTERVAL`, which CUBRID's parser rejects. The XSD
-constraint above is satisfied the moment even one query needs an override, which
-is exactly the condition ADR-0005 named for adding the file. Without it the
-stream fails at Q1 with `Syntax error: unexpected 'INTERVAL'`.
+generic stream uses `INTERVAL`, which CUBRID's parser rejects. Without the file
+the stream fails at Q1 with `Syntax error: unexpected 'INTERVAL'`. The XSD
+constraint above stops mattering the moment even one query needs an override,
+which is exactly the condition for adding the file.
 
-The historical rationale for TPC-C is preserved below because it still holds
-for that benchmark.
+## Where the sysbench templates live
 
-## Why There Is No TPC-C `dialect-cubrid.xml`
+`config/cubrid/sysbench_templated_config.xml` drives a sysbench OLTP clone
+through upstream's `TemplatedBenchmark`, and its query templates sit beside it
+in `config/cubrid/sysbench_templates.xml` rather than in `data/templated/`,
+where upstream keeps `example.xml`.
 
-BenchBase's JAXB-validated `dialect.xsd` requires every `<dialect>` element to
-contain at least one `<procedure>` child. CUBRID's SQL is ANSI-compatible with
-the default BenchBase TPC-C statements — no overrides are needed. Shipping an
-empty-body `dialect-cubrid.xml` fails XSD validation at load time; shipping a
-dialect file with dummy procedures would be ornamental.
+`data/templated/` is upstream's directory, and `sysbench.xml` is a name upstream
+could plausibly use itself — a file there would widen the fork's conflict
+surface for no gain. `query_templates_file` accepts any path, so nothing is lost
+by keeping the templates with the fork's other CUBRID files.
 
-This matches how `dialect-postgres.xml` and `dialect-mysql.xml` are absent: only
-databases that need genuine SQL overrides (`db2`, `monetdb`, `oracle`, `phoenix`,
-`singlestore`, `sqlite`, `sqlserver`, `timesten`) ship dialect files.
+The templates are written against one specific table — `sbtest1` with ids
+1..100000 — and the ranges inside them say so. Changing the row count means
+changing the templates too.
 
-The CUBRID-specific DDL details live instead in `ddl-cubrid.sql`:
-- `DROP TABLE ... CASCADE CONSTRAINTS` (Oracle-style, required by CUBRID)
-- `new_order` has PK declared before FK to prevent CUBRID's duplicate-index
-  rejection when FK and PK cover identical column lists.
+## Fork allowlist and rebase hygiene
 
-## Fork Allowlist (Rebase Hygiene)
-
-All CUBRID-specific changes in this fork are confined to the following paths.
-No other files are modified. See M7 in the plan for the formal allowlist check.
+Three upstream source files are modified, `README.md` gains two additive blocks,
+and everything else is a new file. No other path is touched.
 
 ```
 src/main/java/com/oltpbenchmark/types/DatabaseType.java   (one enum row added)
-src/main/java/com/oltpbenchmark/util/SQLUtil.java         (getSchema() fallback — see below)
+src/main/java/com/oltpbenchmark/util/SQLUtil.java         (getSchema() fallback -- see below)
 pom.xml                                                   (one <profile id="cubrid"> block)
+README.md                                                 (fork banner + CUBRID Support section)
+CUBRID.md                                                 (this file)
 src/main/resources/benchmarks/tpcc/ddl-cubrid.sql         (new)
 src/main/resources/benchmarks/tpch/ddl-cubrid.sql         (new)
 src/main/resources/benchmarks/tpch/dialect-cubrid.xml     (new)
 config/cubrid/                                            (new directory)
-data/templated/                                           (untouched -- see below)
+config/postgres/harness_tpcc_config.xml                   (new -- cross-engine comparison)
+config/mysql/harness_tpcc_config.xml                      (new -- cross-engine comparison)
 scripts/install-cubrid-jdbc.sh                            (new)
 scripts/tpcc-consistency-conditions.sql                   (new)
-CUBRID.md                                                 (this file)
+scripts/tpcc-consistency-conditions-pg.sql                (new)
+scripts/tpcc-consistency-conditions-mysql.sql             (new)
+data/templated/                                           (untouched -- see above)
 ```
 
-Note on the TPC-C dialect: `benchmarks/tpcc/dialect-cubrid.xml` does NOT exist —
-see "Why There Is No TPC-C dialect-cubrid.xml" above. The spec's allowlist
-included it by analogy with other dialect files, but the JAXB XSD constraint
-makes the empty-overrides case a no-file case. The TPC-H one does exist and is
-listed above.
+Verify the allowlist against reality with:
 
-### `SQLUtil.java` — the one upstream file this fork touches
+```bash
+git diff --name-only "$(git merge-base upstream/main HEAD)" HEAD
+```
 
-ADR-0005 says to prefer upstreaming over widening the allowlist, and this change
-is written to be upstreamed rather than kept: it names no engine.
+When rebasing onto upstream:
+
+1. The `DatabaseType.java` enum row is a pure addition — no conflict expected
+   unless upstream adds entries in the same region of the list.
+2. The `pom.xml` profile block is a pure addition between the `postgres` and
+   `mysql` profiles — no conflict expected unless upstream restructures
+   profiles.
+3. `README.md` conflicts only if upstream edits the same two regions: the
+   masthead and the profile list under "How to Build".
+4. Everything else is a new file — no conflict expected.
+
+### `SQLUtil.java` — the one upstream behaviour this fork changes
+
+This change is written to be upstreamed rather than carried: it names no engine.
 
 `SQLUtil.getCatalogDirect()` called `connection.getSchema()` unconditionally.
 That method is JDBC 4.1 and optional in practice — a driver for a DBMS with no
-schema concept may reasonably throw instead of inventing an answer, and CUBRID's
-does (`CUBRIDConnection.getSchema()` throws `UnsupportedOperationException`).
-`refreshCatalog()` runs for every invocation, so this took down **every**
-benchmark on CUBRID before any SQL was issued:
+schema concept may reasonably throw rather than invent an answer, and CUBRID's
+does. Because `refreshCatalog()` runs on every invocation, this took down
+**every** benchmark on CUBRID before any SQL was issued:
 
 ```
 java.sql.SQLException: java.lang.UnsupportedOperationException
@@ -186,36 +241,11 @@ java.sql.SQLException: java.lang.UnsupportedOperationException
     at com.oltpbenchmark.api.BenchmarkModule.refreshCatalog(BenchmarkModule.java:221)
 ```
 
-The fix reads the schema through `getSchemaOrNull()`, which returns null when the
-driver does not implement it. A null schema pattern means "do not filter by
+The fix reads the schema through `getSchemaOrNull()`, which returns null when
+the driver does not implement it. A null schema pattern means "do not filter by
 schema" to `DatabaseMetaData` — for a DBMS without JDBC schemas that is the
-correct query, not a degraded one, which is why the fix carries no CUBRID
-branch and should apply upstream unchanged.
+correct query, not a degraded one, which is why the fix carries no CUBRID branch
+and should apply upstream unchanged.
 
-**Upstream status: not yet filed.** ADR-0005 asks for
-`(upstream-rejected: <link>)` on an allowlist entry that upstream declined; this
-one has not been offered yet, so it is carried as upstream-pending. File it
-against `cmu-db/benchbase` and replace this note with the outcome.
-
-### Why the sysbench templates live in `config/cubrid/`
-
-`config/cubrid/sysbench_templated_config.xml` runs a sysbench OLTP clone through
-upstream's `TemplatedBenchmark`, and its query templates sit beside it in
-`config/cubrid/sysbench_templates.xml` rather than in `data/templated/`, where
-upstream keeps `example.xml`.
-
-`data/templated/` is upstream's directory. A file added there is outside the
-allowlist above, and `sysbench.xml` is a name upstream could plausibly use
-itself. `query_templates_file` takes any path, so nothing is lost by keeping the
-file where this fork's other CUBRID files already are.
-
-The templates are written against a specific table -- `sbtest1` with ids
-1..100000 -- and the ranges in them say so. Templated benchmarks do not load, so
-that table has to exist first; the config file carries the DDL in a comment.
-
-When rebasing against upstream BenchBase:
-1. The `DatabaseType.java` enum row is a pure addition — no conflict expected
-   unless upstream adds entries in the same alphabetical region.
-2. The `pom.xml` profile block is a pure addition between `postgres` and `mysql`
-   profiles — no conflict expected unless upstream restructures profiles.
-3. All other paths are new files — no conflict expected.
+**Upstream status: not yet filed.** File it against `cmu-db/benchbase` and
+replace this note with the outcome.

@@ -4,9 +4,16 @@
 
 BenchBase (formerly [OLTPBench](https://github.com/oltpbenchmark/oltpbench/)) is a Multi-DBMS SQL Benchmarking Framework via JDBC.
 
+> **This is CUBRID's fork of [`cmu-db/benchbase`](https://github.com/cmu-db/benchbase).**
+> It adds CUBRID 11.x as a benchmark target and changes nothing else, so everything
+> upstream documents below still applies as written. For the CUBRID build, configs,
+> and caveats, jump to [CUBRID Support](#cubrid-support) or read
+> [CUBRID.md](./CUBRID.md). The badge above tracks upstream CI, not this fork.
+
 **Table of Contents**
 
 - [Quickstart](#quickstart)
+- [CUBRID Support](#cubrid-support)
 - [Description](#description)
 - [Usage Guide](#usage-guide)
 - [Contributing](#contributing)
@@ -45,6 +52,87 @@ A full list of options can be displayed,
 ```bash
 java -jar benchbase.jar -h
 ```
+
+---
+
+## CUBRID Support
+
+This fork adds [CUBRID](https://www.cubrid.org/) 11.x as a BenchBase target. The
+integration is deliberately thin — one `DatabaseType` enum entry, one Maven
+profile, one engine-agnostic driver-compatibility fix in `SQLUtil`, and otherwise
+only new resource and config files. [CUBRID.md](./CUBRID.md) carries the full
+rationale, the rebase allowlist, and the reasoning behind the defaults.
+
+| Benchmark | Status |
+|-----------|--------|
+| TPC-C | Ready — `config/cubrid/sample_tpcc_config.xml` |
+| TPC-H | DDL and dialect ready; no sample config shipped yet |
+| sysbench OLTP clone | Ready, through upstream's `templated` benchmark |
+
+### Prerequisites
+
+- A running **CUBRID 11.x** server with the target database created and its
+  broker reachable at the host and port in your config XML.
+- **Java 23** and **Maven** (or the bundled `./mvnw`).
+- The **CUBRID JDBC jar** in your local Maven repository. CUBRID does not publish
+  to Maven Central, so the `cubrid:cubrid-jdbc` coordinate used by the `cubrid`
+  profile has to be satisfied locally:
+
+  ```bash
+  ./scripts/install-cubrid-jdbc.sh                  # auto-detects $CUBRID/jdbc/cubrid-jdbc-*.jar
+  ./scripts/install-cubrid-jdbc.sh /path/to/cubrid-jdbc-11.3.2.0058.jar
+  ```
+
+### Build and run
+
+```bash
+git clone https://github.com/cubrid-systems/benchbase.git
+cd benchbase
+./scripts/install-cubrid-jdbc.sh
+./mvnw clean package -P cubrid -DskipTests
+
+tar xvzf target/benchbase-cubrid.tgz -C target/
+cd target/benchbase-cubrid
+```
+
+TPC-C, full cycle:
+
+```bash
+java -jar benchbase.jar -b tpcc -c config/cubrid/sample_tpcc_config.xml \
+    --create=true --load=true --execute=true
+```
+
+The sysbench clone runs through upstream's `templated` plugin, which has no
+loader — `sbtest1` must already exist and be populated. Its DDL and expected row
+range are in a comment at the top of the config:
+
+```bash
+java -jar benchbase.jar -b templated \
+    -c config/cubrid/sysbench_templated_config.xml --execute=true
+```
+
+### Verifying a load
+
+After `--load=true`, check the four TPC-C §3.3.2 consistency conditions with the
+shipped SQL. Every query must report `violations: 0`:
+
+```bash
+csql -C -u dba demodb@localhost -i scripts/tpcc-consistency-conditions.sql
+```
+
+Equivalents for cross-engine comparison runs ship alongside it —
+`scripts/tpcc-consistency-conditions-pg.sql` and
+`scripts/tpcc-consistency-conditions-mysql.sql`, paired with
+`config/postgres/harness_tpcc_config.xml` and
+`config/mysql/harness_tpcc_config.xml`.
+
+### Caveats
+
+- `TRANSACTION_READ_COMMITTED` is the shipped default, chosen from a single
+  integration observation rather than a probe. See
+  [Isolation](./CUBRID.md#isolation).
+- TPC-C ships no `dialect-cubrid.xml` on purpose; TPC-H needs one. The XSD reason
+  is in [Dialect files](./CUBRID.md#dialect-files).
 
 ---
 
@@ -87,7 +175,7 @@ benchmark, leveraging all the system features (logging, controlled speed, contro
 ## Usage Guide
 
 ### How to Build
-Run the following command to build the distribution for a given database specified as the profile name (`-P`).  The following profiles are currently supported: `postgres`, `mysql`, `mariadb`, `sqlite`, `cockroachdb`, `phoenix`, and `spanner`.
+Run the following command to build the distribution for a given database specified as the profile name (`-P`).  The following profiles are currently supported: `postgres`, `mysql`, `mariadb`, `sqlite`, `cockroachdb`, `phoenix`, `spanner`, and `cubrid` (see [CUBRID Support](#cubrid-support) for its extra prerequisite).
 
 ```bash
 ./mvnw clean package -P <profile name>
