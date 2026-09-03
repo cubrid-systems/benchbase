@@ -214,7 +214,7 @@ public class ResultWriter {
         // The TxnType offsets start at 1!
         activeTXTypes.get(s.getTransactionType() - 1).getName(),
         String.format("%10.6f", startUs - offset),
-        Integer.toString(s.getLatencyMicrosecond()),
+        Long.toString(s.getLatencyMicrosecond()),
         Integer.toString(s.getWorkerId()),
         Integer.toString(s.getPhaseId()),
       };

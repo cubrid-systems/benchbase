@@ -53,7 +53,7 @@ public class DistributionStatistics {
   }
 
   /** Computes distribution statistics over values. WARNING: This will sort values. */
-  public static DistributionStatistics computeStatistics(int[] valuesAsMicroseconds) {
+  public static DistributionStatistics computeStatistics(long[] valuesAsMicroseconds) {
     if (valuesAsMicroseconds.length == 0) {
       long[] percentiles = new long[PERCENTILES.length];
       Arrays.fill(percentiles, -1);
@@ -63,13 +63,13 @@ public class DistributionStatistics {
     Arrays.sort(valuesAsMicroseconds);
 
     double sum = 0;
-    for (int value1 : valuesAsMicroseconds) {
+    for (long value1 : valuesAsMicroseconds) {
       sum += value1;
     }
     double average = sum / valuesAsMicroseconds.length;
 
     double sumDiffsSquared = 0;
-    for (int value : valuesAsMicroseconds) {
+    for (long value : valuesAsMicroseconds) {
       double v = value - average;
       sumDiffsSquared += v * v;
     }

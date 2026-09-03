@@ -53,7 +53,7 @@ public class LatencyRecord implements Iterable<LatencyRecord.Sample> {
 
     long startOffsetNanosecond = (startNanosecond - lastNanosecond + 500);
 
-    int latencyMicroseconds = (int) ((endNanosecond - startNanosecond + 500) / 1000);
+    long latencyMicroseconds = (endNanosecond - startNanosecond + 500) / 1000;
 
     chunk[nextIndex] =
         new Sample(transType, startOffsetNanosecond, latencyMicroseconds, workerId, phaseId);
@@ -81,14 +81,14 @@ public class LatencyRecord implements Iterable<LatencyRecord.Sample> {
   public static final class Sample implements Comparable<Sample> {
     private final int transactionType;
     private long startNanosecond;
-    private final int latencyMicrosecond;
+    private final long latencyMicrosecond;
     private final int workerId;
     private final int phaseId;
 
     public Sample(
         int transactionType,
         long startNanosecond,
-        int latencyMicrosecond,
+        long latencyMicrosecond,
         int workerId,
         int phaseId) {
       this.transactionType = transactionType;
@@ -106,7 +106,7 @@ public class LatencyRecord implements Iterable<LatencyRecord.Sample> {
       return startNanosecond;
     }
 
-    public int getLatencyMicrosecond() {
+    public long getLatencyMicrosecond() {
       return latencyMicrosecond;
     }
 
