@@ -65,16 +65,18 @@ rationale, the rebase allowlist, and the reasoning behind the defaults.
 
 | Benchmark | Status |
 |-----------|--------|
-| TPC-C | Ready — `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | Ready — `config/cubrid/sample_tpch_config.xml`, all 22 queries verified end to end |
-| YCSB | Ready — `config/cubrid/sample_ycsb_config.xml`, no CUBRID DDL or dialect needed |
-| CH-benCHmark, AuctionMark | Schema ready (`ddl-cubrid.sql`); no config yet |
+| TPC-C, TPC-H, YCSB | Ready, verified end to end |
+| TATP, SmallBank, Voter, SEATS | Ready, verified end to end — config only |
+| Epinions, hyadapt, NoOp, Twitter | Ready, verified end to end |
+| SIBench, OT-Metrics, AuctionMark | Ready, verified end to end |
+| ResourceStresser | Runs; its procedures are deliberately slow, so give it minutes |
+| CH-benCHmark | Schema ready; needs a `tpcc,chbenchmark` config |
+| Wikipedia | Schema ready; blocked by a CUBRID catalog-metadata fault |
 | sysbench OLTP clone | Config committed, never run |
 
-Thirteen more benchmarks take upstream's generic schema on CUBRID unchanged and
-need only a config — `tatp`, `smallbank` and `voter` have been run end to end to
-confirm that holds past the schema. Five need their own DDL. Which, and why, is
-in [What the rest of the suite would need](./CUBRID.md#what-the-rest-of-the-suite-would-need).
+Fifteen of the eighteen benchmarks run. Which ones needed a `ddl-cubrid.sql` or a
+dialect, what each engine incompatibility was, and why Wikipedia is blocked are
+in [Coverage](./CUBRID.md#coverage).
 
 ### Prerequisites
 

@@ -58,8 +58,10 @@ public abstract class SQLUtil {
       return (Long) obj;
     } else if (obj instanceof Integer) {
       return ((Integer) obj).longValue();
-    } else if (obj instanceof BigDecimal) {
-      return ((BigDecimal) obj).longValue();
+    } else if (obj instanceof Number) {
+      // Short for a SMALLINT or TINYINT column, Byte, BigInteger: a driver is free to
+      // return any Number for an integral column, and every one of them converts.
+      return ((Number) obj).longValue();
     }
 
     LOG.warn("BAD BAD BAD: returning null because getLong does not support {}", obj.getClass());
@@ -76,8 +78,8 @@ public abstract class SQLUtil {
       return (Integer) obj;
     } else if (obj instanceof Long) {
       return ((Long) obj).intValue();
-    } else if (obj instanceof BigDecimal) {
-      return ((BigDecimal) obj).intValue();
+    } else if (obj instanceof Number) {
+      return ((Number) obj).intValue();
     }
 
     LOG.warn("BAD BAD BAD: returning null because getInteger does not support {}", obj.getClass());
@@ -100,8 +102,8 @@ public abstract class SQLUtil {
       return (Double) obj;
     } else if (obj instanceof Float) {
       return ((Float) obj).doubleValue();
-    } else if (obj instanceof BigDecimal) {
-      return ((BigDecimal) obj).doubleValue();
+    } else if (obj instanceof Number) {
+      return ((Number) obj).doubleValue();
     }
 
     LOG.warn("BAD BAD BAD: returning null because getDouble does not support {}", obj.getClass());

@@ -22,97 +22,64 @@ summary, see [CUBRID Support](./README.md#cubrid-support) in the README.
 
 ## Coverage
 
-| Benchmark | Status | CUBRID-specific files |
-|-----------|--------|-----------------------|
-| TPC-C | Ready | `src/main/resources/benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | Ready, verified end to end | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml`, `config/cubrid/sample_tpch_config.xml` |
-| YCSB | Ready, verified end to end | `config/cubrid/sample_ycsb_config.xml` — no DDL and no dialect needed |
-| CH-benCHmark | Schema ready; no config yet | `src/main/resources/benchmarks/chbenchmark/ddl-cubrid.sql` |
-| AuctionMark | Schema ready; no config yet | `src/main/resources/benchmarks/auctionmark/ddl-cubrid.sql` |
-| sysbench OLTP clone | Config committed, never run | `config/cubrid/sysbench_templated_config.xml`, `config/cubrid/sysbench_templates.xml` |
+Verified end to end against CUBRID 11.5 unless the table says otherwise: schema
+created, data loaded, workload executed, no unexpected SQL errors. Everything
+from `sibench` down was run on a release build of `develop`
+(11.5.0.2513-5f3a30d); the rows above it were run earlier on a debug build.
 
-### What the rest of the suite would need
+| Benchmark | Transactions | CUBRID-specific files |
+|---|---:|---|
+| TPC-C | verified | `benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
+| TPC-H | 22 of 22 queries | `benchmarks/tpch/ddl-cubrid.sql`, `benchmarks/tpch/dialect-cubrid.xml`, config |
+| YCSB | 55,066 | config only |
+| TATP | 17,226 | config only |
+| SmallBank | 882 | config only |
+| Voter | 4,491 | config only |
+| SIBench | 15,397 | `benchmarks/sibench/ddl-cubrid.sql` + `dialect-cubrid.xml`, config |
+| OT-Metrics | 50,735 | `benchmarks/otmetrics/ddl-cubrid.sql`, config |
+| Twitter | 70,723 | `benchmarks/twitter/ddl-cubrid.sql`, config |
+| SEATS | 7,394 | config only |
+| AuctionMark | 8,831 | `benchmarks/auctionmark/ddl-cubrid.sql`, config |
+| Epinions | 19,136 | config only |
+| hyadapt | 16,059 | config only |
+| NoOp | 15,001 | config only |
+| ResourceStresser | 4 in 60s | config only -- see below |
+| CH-benCHmark | schema only | `benchmarks/chbenchmark/ddl-cubrid.sql`; needs a `tpcc,chbenchmark` config |
+| Wikipedia | blocked | `benchmarks/wikipedia/ddl-cubrid.sql`; schema loads, catalog read does not -- see below |
+| sysbench OLTP clone | never run | `config/cubrid/sysbench_templated_config.xml`, `sysbench_templates.xml` |
 
-Every BenchBase benchmark ships a `ddl-generic.sql`. Feeding each one to CUBRID
-11.5 -- on an empty database, then a second time to exercise the `DROP` path --
-sorts the suite into two groups. Thirteen are accepted unchanged:
+ResourceStresser is not broken: its procedures are deliberately expensive, and
+sixty seconds at one terminal completed four transactions with no SQL errors.
+Give it minutes, not seconds.
 
-`epinions` `hyadapt` `noop` `resourcestresser` `seats` `smallbank` `tatp`
-`tpcc` `tpcds` `tpch` `twitter` `voter` `ycsb`
+### Wikipedia is blocked by the server, not by the schema
 
-For those, a config XML is the only missing piece, exactly as it was for YCSB.
-Three of them -- `tatp`, `smallbank`, `voter` -- have since been run end to end
-against CUBRID 11.5 to check that the pattern holds past the schema, and it
-does: every procedure of each executed with no unexpected SQL errors.
+`ddl-cubrid.sql` creates all twelve tables, twice in a row. What fails is the
+step after: `SQLUtil.getCatalogDirect ()` walks `DatabaseMetaData`, and once
+enough tables are in the schema a call comes back as
 
-| Benchmark | Transactions | Procedures | Unexpected SQL errors |
-|---|---:|---:|---:|
-| `tatp` | 17,226 | 7 of 7 | 0 |
-| `smallbank` | 882 | 6 of 6 | 0 |
-| `voter` | 4,491 | 1 of 1 | 0 |
+    Empty component list in class.
 
-`tatp` and `smallbank` do report aborted transactions. Those are the benchmarks'
-own `UserAbortException` paths -- TATP's call-forwarding procedures abort when
-the row they target does not exist, SmallBank's `SendPayment` when the sending
-account has no checking record -- so they are workload semantics, not engine
-errors. The distinction is visible in the output: BenchBase counts them under
-Aborted, and leaves Unexpected SQL Errors empty.
+That is `ER_OBJ_NO_COMPONENTS (-226)`, and CUBRID raises it at
+`ER_WARNING_SEVERITY` from `db_get_superclasses ()`, `db_get_subclasses ()` and
+`db_get_attributes ()` in `src/compat/db_info.c` -- whenever a class has no
+superclasses, no subclasses, or no attributes of the kind asked for. An ordinary
+table with no inheritance satisfies the first two every time, so the warning is
+set constantly; it only becomes visible when a later call reports the lingering
+error state.
 
-One caveat remains for the other nine: a schema that creates is not a benchmark
-that runs, and they have not been taken past the schema. And `tpcds` has no
-benchmark class in `config/plugin.xml`, so it is not reachable regardless.
+The shape of it, measured:
 
-Five need a `ddl-cubrid.sql`, for four distinct reasons:
+- Not table-specific: `getImportedKeys` on the same table sixty times in a row
+  is fine.
+- Cumulative across *different* tables: the 27th call fails, deterministically.
+- Not the driver: 11.3.2.0058 and 11.4.0.0075 behave identically.
+- Reproduces on a release build of `develop`, so it is not feature-branch
+  fallout.
 
-| Benchmark | Why the generic DDL fails on CUBRID | Status |
-|---|---|---|
-| `chbenchmark` | `DROP TABLE ... CASCADE`; CUBRID spells it `CASCADE CONSTRAINTS` | fixed |
-| `auctionmark` | self-referencing FK declared above its `PRIMARY KEY`, then a FK whose columns match the PK | fixed |
-| `sibench` | column named `value`, a CUBRID reserved word | DDL + dialect written |
-| `otmetrics` | same reserved word | fixed |
-| `wikipedia` | `varbinary`, `binary` and `TEXT`, three types CUBRID does not have | open |
-
-`value` is rejected wherever it appears unquoted, in queries exactly as in DDL,
-and bracket-quoting is accepted in both:
-
-```sql
-CREATE TABLE t (id INT PRIMARY KEY, value INT)   -- Syntax error: unexpected 'value'
-SELECT id FROM t ORDER BY value ASC              -- Syntax error: unexpected 'value'
-UPDATE t SET value = value + 1 WHERE id = 1      -- Syntax error: unexpected 'value'
-CREATE TABLE t (id INT PRIMARY KEY, [value] INT) -- Execute OK
-```
-
-That splits the two benchmarks that hit it. **`otmetrics` needs only a schema
-file**: no SQL it issues names the column -- `GetSessionRange`, its one
-procedure, uses `SELECT *`, and `OTMetricsLoader` goes through
-`SQLUtil.getInsertSQL`, which omits column names for CUBRID. **`sibench` needs
-both**: each of its two procedures names the column, in `ORDER BY value ASC` and
-in `UPDATE ... SET value = value + 1`, so the schema and a dialect have to be
-quoted together.
-
-`wikipedia` is the one with real work in it. Nine of its twelve tables fail, on
-three types CUBRID does not have: `varbinary(n)` (`ipblocks`, `logging`,
-`page_restrictions`, `recentchanges`, `user_groups`), `binary(n)` (`page`,
-`page_backup`, `revision`) and `TEXT` (`text`). `VARCHAR(n)`, `CHAR(n)` and
-`STRING` all work as replacements, and `VARCHAR` is the right one for the binary
-columns rather than `BIT VARYING`, because `WikipediaLoader` binds them with
-`setString` -- twenty-eight calls, and no `setBytes` anywhere. The
-`auto_increment` in that file is only ever a `TODO` comment, never a column
-definition.
-
-YCSB is the cheapest target in the set: a config file and nothing else. Its
-schema is one table with no foreign keys, so `getDatabaseDDLPath()` falls back
-to `benchmarks/ycsb/ddl-generic.sql`, which CUBRID accepts as written --
-`DROP TABLE IF EXISTS`, an `INT PRIMARY KEY`, and ten `VARCHAR(100)` columns.
-None of the six procedures needs a SQL override, including
-`ReadModifyWriteRecord`, whose `SELECT ... FOR UPDATE` CUBRID supports and whose
-single-table shape clears every restriction the server places on that clause
-(no aggregate, no `DISTINCT`, no derived table, no FOR-UPDATE subquery).
-
-This was run end to end against CUBRID 11.5 -- create, load, and a six-procedure
-workload -- with no aborted transactions and no unexpected SQL errors. That run
-was against a debug build, so it establishes that the benchmark works, not how
-fast it is.
+This is why the benchmarks with few tables were never affected -- TPC-C has
+nine, TPC-H eight, YCSB one -- and Wikipedia, at twelve plus whatever else is in
+the schema, is.
 
 ## Prerequisites
 
@@ -378,7 +345,7 @@ and everything else is a new file. No other path is touched.
 
 ```
 src/main/java/com/oltpbenchmark/types/DatabaseType.java      (one enum row added)
-src/main/java/com/oltpbenchmark/util/SQLUtil.java            (getSchema() fallback -- see below)
+src/main/java/com/oltpbenchmark/util/SQLUtil.java            (getSchema() fallback + Number conversion -- see below)
 src/main/java/com/oltpbenchmark/LatencyRecord.java           (latency widened to int64 -- see below)
 src/main/java/com/oltpbenchmark/ThreadBench.java             (same)
 src/main/java/com/oltpbenchmark/DistributionStatistics.java  (same)
@@ -392,6 +359,11 @@ src/main/resources/benchmarks/tpch/ddl-cubrid.sql            (new)
 src/main/resources/benchmarks/tpch/dialect-cubrid.xml        (new)
 src/main/resources/benchmarks/chbenchmark/ddl-cubrid.sql     (new)
 src/main/resources/benchmarks/auctionmark/ddl-cubrid.sql     (new)
+src/main/resources/benchmarks/otmetrics/ddl-cubrid.sql       (new)
+src/main/resources/benchmarks/sibench/ddl-cubrid.sql         (new)
+src/main/resources/benchmarks/sibench/dialect-cubrid.xml     (new)
+src/main/resources/benchmarks/twitter/ddl-cubrid.sql         (new)
+src/main/resources/benchmarks/wikipedia/ddl-cubrid.sql       (new)
 config/cubrid/                                               (new directory)
 config/postgres/harness_tpcc_config.xml                      (new -- cross-engine comparison)
 config/mysql/harness_tpcc_config.xml                         (new -- cross-engine comparison)
@@ -459,5 +431,19 @@ schema" to `DatabaseMetaData` — for a DBMS without JDBC schemas that is the
 correct query, not a degraded one, which is why the fix carries no CUBRID branch
 and should apply upstream unchanged.
 
-**Upstream status: not yet filed.** File it against `cmu-db/benchbase` and
-replace this note with the outcome.
+The same file carries a second engine-agnostic fix. `getLong ()`,
+`getInteger ()` and `getDouble ()` each accepted a fixed handful of boxed types
+and returned null for anything else, logging `BAD BAD BAD`. CUBRID's driver
+returns `Short` for a `tinyint` column, which is a perfectly ordinary thing for
+a driver to do, and SEATS died on it:
+
+    java.lang.NullPointerException: Cannot invoke "java.lang.Long.longValue()"
+      because the return value of "SQLUtil.getLong(Object)" is null
+        at SEATSProfile.loadConfigHistograms (SEATSProfile.java:334)
+
+Each converter now falls back to `Number`, which subsumes the types they already
+listed and every other boxed numeric a driver might hand back. AuctionMark's
+`LoadConfig` was failing on the same gap and recovered with it.
+
+**Upstream status: not yet filed.** Both changes name no engine. File them
+against `cmu-db/benchbase` and replace this note with the outcome.
