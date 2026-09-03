@@ -66,14 +66,15 @@ rationale, the rebase allowlist, and the reasoning behind the defaults.
 | Benchmark | Status |
 |-----------|--------|
 | TPC-C | Ready — `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | `config/cubrid/sample_tpch_config.xml` — schema and all 22 queries verified, end-to-end run pending |
+| TPC-H | Ready — `config/cubrid/sample_tpch_config.xml`, all 22 queries verified end to end |
 | YCSB | Ready — `config/cubrid/sample_ycsb_config.xml`, no CUBRID DDL or dialect needed |
 | CH-benCHmark, AuctionMark | Schema ready (`ddl-cubrid.sql`); no config yet |
 | sysbench OLTP clone | Config committed, never run |
 
 Thirteen more benchmarks take upstream's generic schema on CUBRID unchanged and
-need only a config; five need their own DDL. Which, and why, is in
-[What the rest of the suite would need](./CUBRID.md#what-the-rest-of-the-suite-would-need).
+need only a config — `tatp`, `smallbank` and `voter` have been run end to end to
+confirm that holds past the schema. Five need their own DDL. Which, and why, is
+in [What the rest of the suite would need](./CUBRID.md#what-the-rest-of-the-suite-would-need).
 
 ### Prerequisites
 

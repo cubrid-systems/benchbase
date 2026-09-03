@@ -25,7 +25,7 @@ summary, see [CUBRID Support](./README.md#cubrid-support) in the README.
 | Benchmark | Status | CUBRID-specific files |
 |-----------|--------|-----------------------|
 | TPC-C | Ready | `src/main/resources/benchmarks/tpcc/ddl-cubrid.sql`, `config/cubrid/sample_tpcc_config.xml` |
-| TPC-H | Schema and all 22 queries verified; end-to-end run still pending | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml`, `config/cubrid/sample_tpch_config.xml` |
+| TPC-H | Ready, verified end to end | `src/main/resources/benchmarks/tpch/ddl-cubrid.sql`, `src/main/resources/benchmarks/tpch/dialect-cubrid.xml`, `config/cubrid/sample_tpch_config.xml` |
 | YCSB | Ready, verified end to end | `config/cubrid/sample_ycsb_config.xml` — no DDL and no dialect needed |
 | CH-benCHmark | Schema ready; no config yet | `src/main/resources/benchmarks/chbenchmark/ddl-cubrid.sql` |
 | AuctionMark | Schema ready; no config yet | `src/main/resources/benchmarks/auctionmark/ddl-cubrid.sql` |
@@ -41,10 +41,26 @@ sorts the suite into two groups. Thirteen are accepted unchanged:
 `tpcc` `tpcds` `tpch` `twitter` `voter` `ycsb`
 
 For those, a config XML is the only missing piece, exactly as it was for YCSB.
-Two caveats: a schema that creates is not a benchmark that runs -- the
-procedures and the loader have to work too, and only YCSB has been taken all the
-way -- and `tpcds` has no benchmark class in `config/plugin.xml`, so it is not
-reachable regardless.
+Three of them -- `tatp`, `smallbank`, `voter` -- have since been run end to end
+against CUBRID 11.5 to check that the pattern holds past the schema, and it
+does: every procedure of each executed with no unexpected SQL errors.
+
+| Benchmark | Transactions | Procedures | Unexpected SQL errors |
+|---|---:|---:|---:|
+| `tatp` | 17,226 | 7 of 7 | 0 |
+| `smallbank` | 882 | 6 of 6 | 0 |
+| `voter` | 4,491 | 1 of 1 | 0 |
+
+`tatp` and `smallbank` do report aborted transactions. Those are the benchmarks'
+own `UserAbortException` paths -- TATP's call-forwarding procedures abort when
+the row they target does not exist, SmallBank's `SendPayment` when the sending
+account has no checking record -- so they are workload semantics, not engine
+errors. The distinction is visible in the output: BenchBase counts them under
+Aborted, and leaves Unexpected SQL Errors empty.
+
+One caveat remains for the other nine: a schema that creates is not a benchmark
+that runs, and they have not been taken past the schema. And `tpcds` has no
+benchmark class in `config/plugin.xml`, so it is not reachable regardless.
 
 Five need a `ddl-cubrid.sql`, for four distinct reasons:
 
