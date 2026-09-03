@@ -362,6 +362,7 @@ src/main/java/com/oltpbenchmark/util/ResultWriter.java       (same)
 pom.xml                                                      (one <profile id="cubrid"> block)
 README.md                                                    (fork banner + CUBRID Support section)
 CUBRID.md                                                    (this file)
+src/test/java/com/oltpbenchmark/TestDistributionStatistics.java (new -- pins the latency width)
 src/main/resources/benchmarks/tpcc/ddl-cubrid.sql            (new)
 src/main/resources/benchmarks/tpch/ddl-cubrid.sql            (new)
 src/main/resources/benchmarks/tpch/dialect-cubrid.xml        (new)
@@ -377,10 +378,22 @@ scripts/tpcc-consistency-conditions-mysql.sql                (new)
 data/templated/                                              (untouched -- see above)
 ```
 
-The four latency files came in as one commit that widened transaction latency
-from int32 to int64 microseconds. Like the `getSchema()` fallback it names no
-engine, so it belongs upstream rather than here; it is listed as
-upstream-pending on the same terms.
+The four latency files widen transaction latency from int32 to int64
+microseconds. Like the `getSchema()` fallback the change names no engine, so it
+belongs upstream rather than here; it is listed as upstream-pending on the same
+terms.
+
+It took two commits, because the first fix was half of one. `729002d` widened
+the recording path, and an 86-minute CUBRID TPC-H Q20 run then wrote a correct
+2594811975 us into its raw CSV while the `summary.json` beside it reported every
+percentile as exactly `2147483647`. `DistributionStatistics` keeps percentiles
+in a `long` but hands them out through `double` getters, and `toMap()` cast
+those doubles to `int` — and a double-to-int cast **saturates** where a
+long-to-int cast **wraps**. So the recording path failed loudly and the summary
+path failed silently, reporting a plausible 35.8-minute answer. `c2f75a3` widens
+`toMap()` and adds a test that pins the three behaviours apart, since which cast
+is used decides whether a too-large latency is wrong-and-visible or
+wrong-and-silent.
 
 Verify the allowlist against reality with:
 
