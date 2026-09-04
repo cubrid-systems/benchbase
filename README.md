@@ -70,7 +70,7 @@ rationale, the rebase allowlist, and the reasoning behind the defaults.
 | Epinions, hyadapt, NoOp, Twitter | Ready, verified end to end |
 | SIBench, OT-Metrics, AuctionMark | Ready, verified end to end |
 | ResourceStresser | Runs; its procedures are deliberately slow, so give it minutes |
-| CH-benCHmark | Schema ready; needs a `tpcc,chbenchmark` config |
+| CH-benCHmark | Schema and config ready; workload not yet verified |
 | Wikipedia | Schema ready; blocked by a CUBRID catalog-metadata fault |
 | sysbench OLTP clone | Config committed, never run |
 

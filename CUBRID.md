@@ -44,13 +44,21 @@ from `sibench` down was run on a release build of `develop`
 | hyadapt | 16,059 | config only |
 | NoOp | 15,001 | config only |
 | ResourceStresser | 4 in 60s | config only -- see below |
-| CH-benCHmark | schema only | `benchmarks/chbenchmark/ddl-cubrid.sql`; needs a `tpcc,chbenchmark` config |
+| CH-benCHmark | schema verified; load not finished | `benchmarks/chbenchmark/ddl-cubrid.sql`, `config/cubrid/sample_chbenchmark_config.xml` |
 | Wikipedia | blocked | `benchmarks/wikipedia/ddl-cubrid.sql`; schema loads, catalog read does not -- see below |
 | sysbench OLTP clone | never run | `config/cubrid/sysbench_templated_config.xml`, `sysbench_templates.xml` |
 
 ResourceStresser is not broken: its procedures are deliberately expensive, and
 sixty seconds at one terminal completed four transactions with no SQL errors.
 Give it minutes, not seconds.
+
+CH-benCHmark is invoked as `-b tpcc,chbenchmark`, and its config carries both
+benchmarks' weights and transaction lists. Both schemas create through
+BenchBase against CUBRID -- the nine TPC-C tables and the three this benchmark
+adds. It needs no dialect: unlike TPC-H, none of its twenty-two queries uses an
+`INTERVAL` literal. What is not yet verified is the workload, because the TPC-C
+load at scale factor 1 did not finish on the host used here; the row counts
+reached `order_line` before the run was interrupted.
 
 ### Wikipedia is blocked by the server, not by the schema
 
