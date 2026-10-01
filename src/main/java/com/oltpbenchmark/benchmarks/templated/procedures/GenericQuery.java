@@ -49,6 +49,8 @@ public abstract class GenericQuery extends Procedure {
             while (rs.next()) {
               // do nothing
             }
+          } catch (SQLException resultException) {
+            throw resultException;
           } catch (Exception resultException) {
             resultException.printStackTrace();
             throw new RuntimeException("Could not retrieve ResultSet");
@@ -58,6 +60,10 @@ public abstract class GenericQuery extends Procedure {
         // Case for UPDATE, INSERT, DELETE queries
         // do nothing
       }
+    } catch (SQLException e) {
+      // Let Worker roll back, count the error and go on, as for the other benchmarks; wrapped,
+      // one duplicate key or deadlock ended the whole run.
+      throw e;
     } catch (Exception e) {
       e.printStackTrace();
       throw new RuntimeException(
