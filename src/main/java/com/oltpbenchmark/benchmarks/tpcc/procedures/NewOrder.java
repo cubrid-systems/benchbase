@@ -208,6 +208,11 @@ public class NewOrder extends TPCCProcedure {
         PreparedStatement stmtInsertOrderLine =
             this.getPreparedStatement(conn, stmtInsertOrderLineSQL)) {
 
+      // A driver that caches statements may hand back the batch of a NewOrder that aborted
+      // before executing it (the invalid item): drop those rows, or they run in this one.
+      stmtInsertOrderLine.clearBatch();
+      stmtUpdateStock.clearBatch();
+
       for (int ol_number = 1; ol_number <= o_ol_cnt; ol_number++) {
         int ol_supply_w_id = supplierWarehouseIDs[ol_number - 1];
         int ol_i_id = itemIDs[ol_number - 1];
