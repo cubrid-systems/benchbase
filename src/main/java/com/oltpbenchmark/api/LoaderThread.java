@@ -64,8 +64,8 @@ public abstract class LoaderThread implements Runnable {
   }
 
   /**
-   * conn, whose statements commit after each update and each batch, as under autocommit, except
-   * that a batch commits once.
+   * conn, whose statements commit after each update and each batch and roll back after a failure,
+   * as under autocommit, except that a batch commits once.
    */
   private static Connection commitEachStatement(Connection conn) {
     return (Connection)
@@ -86,7 +86,19 @@ public abstract class LoaderThread implements Runnable {
         LoaderThread.class.getClassLoader(),
         new Class<?>[] {type},
         (proxy, method, args) -> {
-          Object result = invoke(stmt, method, args);
+          Object result;
+          try {
+            result = invoke(stmt, method, args);
+          } catch (SQLException ex) {
+            // PostgreSQL rejects every later statement in a failed transaction, and the loaders
+            // log an error and go on with the connection. Only the failed statement is undone.
+            try {
+              conn.rollback();
+            } catch (SQLException rollbackEx) {
+              ex.addSuppressed(rollbackEx);
+            }
+            throw ex;
+          }
           String name = method.getName();
           // execute() is false for an update; a query's results stay open until the next commit.
           if (name.equals("executeBatch")
